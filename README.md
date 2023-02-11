@@ -1,2 +1,2 @@
 # ato
-This open source project builds a robotic arm called ato.
+Happy birthday Bai Lu!
