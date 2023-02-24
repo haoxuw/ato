@@ -108,7 +108,7 @@ arm_segments_config = {
                 ActuatorPurpose.PITCH,
                 PiHeaderIdToBCM.THIRTY_THREE,
                 servo_ds5160.ServoDs5160,
-                180,
+                180, # there are two versions of DS5160, rotates 0~180 and 0~270 respectively, with former supporting finer control but less range. The prototype I put together happened have a 270 broken down -- using a 180 here as replacement.
                 1,
                 90,
                 (-80, 80),

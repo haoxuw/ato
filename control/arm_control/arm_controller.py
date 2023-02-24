@@ -288,7 +288,7 @@ class ArmController(arm_controller_interface.ArmControllerInterface):
         )
 
     # the difference between this and __move_servos_by_joint_space_delta is a velocity limit
-    def __move_servos_towards(self, target_positions, show_info=False):
+    def __move_towards(self, target_positions, show_info=False):
         assert isinstance(
             target_positions, (np.ndarray, np.generic, collections.abc.Sequence)
         ), type(target_positions)
@@ -316,17 +316,22 @@ class ArmController(arm_controller_interface.ArmControllerInterface):
             current_pose=self.__get_endeffector_pose(),
         )
         if target_positions is not None:
-            self.__move_servos_towards(target_positions=target_positions)
+            self.__move_towards(target_positions=target_positions)
 
-    def move_servos_to_calibration_position(self):
-        actuator_positions = motion.ActuatorPositions(
-            [
-                self._indexed_servo_objs[
-                    self.__get_index_by_servo_name(unique_name)
-                ].calibration_position
-                for unique_name in self._indexed_servo_names
-            ]
-        )
+    def move_to_installation_position(self):
+        for servo in self._indexed_servo_objs:
+            servo.move_to_installation_position()
+
+    def move_to_home_position(self, home_pitch=[60, 80, -50]):
+        num_servos = 7
+        assert (
+            len(self._indexed_servo_names) == num_servos
+        ), f"Currently this function only support for {(num_servos-1)/2} segment arm."
+        actuator_positions = motion.ActuatorPositions(positions=[0] * num_servos)
+        for segment_id, pitch in enumerate(home_pitch):
+            actuator_positions.set_position(
+                val=pitch, segment_id=segment_id, roll_not_pitch=False
+            )
         self.move_to_actuator_positions(actuator_positions=actuator_positions)
 
     def __reset_trajectory(self):
@@ -511,10 +516,14 @@ class ArmController(arm_controller_interface.ArmControllerInterface):
         }
         return None
 
-    def move_to_actuator_positions(self, actuator_positions: motion.ActuatorPositions):
+    def move_to_actuator_positions(
+        self, actuator_positions: motion.ActuatorPositions, pause_sec: float = 1
+    ):
         trajectory = motion.TrajectoryActuatorPositions()
         trajectory.append(timestamp=0, positions=actuator_positions)
-        trajectory = self.prepend_reposition_to_trajectory(trajectory)
+        trajectory = self.prepend_reposition_to_trajectory(
+            target_trajectory=trajectory, pause_sec=pause_sec
+        )
         self.queue_up_trajectory(trajectory)
 
     def is_playing_trajectory(self, current_time=None):

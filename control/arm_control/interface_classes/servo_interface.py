@@ -104,6 +104,11 @@ class ServoInterface:
         )
         return position
 
+    def move_to_installation_position(self):
+        self.move_to_position(
+            self.__installation_angle, no_validation=True, apply_calibration=False
+        )
+
     def get_valid_position(self, position):
         position = min(position, self.__rotation_range[1], self.__servo_max_position)
         position = max(position, self.__rotation_range[0])
