@@ -396,9 +396,9 @@ class EndeffectorPose(Position):
         return f"XYZ: ({self.x},{self.y},{self.z}); RPY: ({self.roll},{self.pitch},{self.yaw})"
 
     def inverse_kinematics_math_based(
-        self, current_actuator_positions, current_pose, align_orientation=False
+        self, robot_urdf, current_actuator_positions, align_orientation=False
     ):
-        robot = ikpy.chain.Chain.from_urdf_file("ato_3_seg.urdf")
+        robot = ikpy.chain.Chain.from_urdf_file(robot_urdf)
         initial_position = np.radians(
             np.concatenate([[0], current_actuator_positions, [0]])
         )

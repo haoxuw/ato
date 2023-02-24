@@ -52,7 +52,7 @@ class ServoConnectionConfig:
             self.actuator_purpose,
             self.header_id,
             self.servo_class,
-            self.servo_max_position,
+            self.servo_max_position,  # There are two versions of DS5160, rotates 0~180 and 0~270 respectively, with former supporting finer control but less range.
             self.velocity_magnifier,
             self.installation_angle,
             self.rotation_range,
@@ -63,7 +63,7 @@ class ServoConnectionConfig:
 SegmentLength = 210
 GripperLength = 147
 
-# use (-80, 80) instead of (0, 180) to prevent damages from overshooting rotation
+# use (-85, 85) instead of (0, 180) to prevent damages from overshooting rotation
 arm_segments_config = {
     0: {
         SegmentConfigTypes.PHYSICAL_LENGTH: SegmentLength,
@@ -86,7 +86,7 @@ arm_segments_config = {
                 270,
                 1,
                 90,
-                (-80, 80),
+                (-85, 85),
             )
         ),
     },
@@ -108,10 +108,10 @@ arm_segments_config = {
                 ActuatorPurpose.PITCH,
                 PiHeaderIdToBCM.THIRTY_THREE,
                 servo_ds5160.ServoDs5160,
-                180, # there are two versions of DS5160, rotates 0~180 and 0~270 respectively, with former supporting finer control but less range. The prototype I put together happened have a 270 broken down -- using a 180 here as replacement.
+                180,  # The prototype I put together happened have a 270 broken down -- using a 180 here as replacement.
                 1,
                 90,
-                (-80, 80),
+                (-85, 85),
             )
         ),
     },
@@ -136,7 +136,7 @@ arm_segments_config = {
                 270,
                 1,
                 90,
-                (-80, 80),
+                (-85, 85),
             )
         ),
     },

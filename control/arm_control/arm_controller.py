@@ -141,6 +141,23 @@ class ArmController(arm_controller_interface.ArmControllerInterface):
         self.__controller_start_time = datetime.now()
         self.ready = True
 
+        # initially pos = ik(fk(pose)) must be true
+        assert self.validate_fk_ik()  # also touches lazy-loading contents
+
+    def validate_fk_ik(self):
+        joint_positions_sent_to_hardware = (self.__get_indexed_actuator_positions(),)
+        estimated_ee_pose_via_fk = self.__get_endeffector_pose()
+        joint_positions_solved_by_ik = (
+            self.__solve_best_inverse_kinematics(
+                target_pose=motion.EndeffectorPose(pose=estimated_ee_pose_via_fk)
+            ),
+        )
+        return np.allclose(
+            joint_positions_sent_to_hardware,
+            joint_positions_solved_by_ik,
+            rtol=0.01,  # 1% tolerance
+        ), (joint_positions_solved_by_ik, joint_positions_solved_by_ik)
+
     def get_joystick_input_states(self):
         return self.__joystick_input_states
 
@@ -304,19 +321,23 @@ class ArmController(arm_controller_interface.ArmControllerInterface):
         self.__intended_pose.apply_delta(
             pose_delta=cartesian_delta[:6], gripper_delta=cartesian_delta[-1]
         )
-        self.__move_servos_by_cartesian(pose=self.__intended_pose)
+        self.__move_servos_by_cartesian(target_pose=self.__intended_pose)
 
-    def __move_servos_by_cartesian(self, pose: motion.EndeffectorPose):
-        assert isinstance(pose, motion.EndeffectorPose)
+    def __move_servos_by_cartesian(self, target_pose: motion.EndeffectorPose):
+        target_positions = self.__solve_best_inverse_kinematics(target_pose=target_pose)
+        if target_positions is not None:
+            self.__move_towards(target_positions=target_positions)
+
+    def __solve_best_inverse_kinematics(self, target_pose: motion.EndeffectorPose):
+        assert isinstance(target_pose, motion.EndeffectorPose), target_pose
         current_actuator_positions = (
             self.__get_current_actuator_position_obj().positions[:-1]
         )  # [:-1] to remove gripper
-        target_positions = pose.inverse_kinematics_math_based(
+        target_positions = target_pose.inverse_kinematics_math_based(
+            robot_urdf="ato_3_seg.urdf",
             current_actuator_positions=current_actuator_positions,
-            current_pose=self.__get_endeffector_pose(),
         )
-        if target_positions is not None:
-            self.__move_towards(target_positions=target_positions)
+        return target_positions
 
     def move_to_installation_position(self):
         for servo in self._indexed_servo_objs:
@@ -714,7 +735,7 @@ class ArmController(arm_controller_interface.ArmControllerInterface):
         ].move_to_position(position=position, show_info=show_info)
         return position
 
-    def get_current_actuator_positions(self):
+    def describe_current_actuator_positions(self):
         self.actuator_positions_dict = {}
         for unique_name, servo_obj in zip(
             self._indexed_servo_names, self._indexed_servo_objs
