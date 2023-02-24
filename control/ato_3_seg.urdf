@@ -27,7 +27,7 @@
 
   <joint name="joint_1_to_bone_1" type="revolute">
     <axis xyz="1 0 0"/>
-    <limit lower="-1.39626" upper="1.39626" effort="1.0" velocity="1.0"/>
+    <limit lower="-1.48353" upper="1.48353" effort="1.0" velocity="1.0"/>
     <parent link="joint_1"/>
     <child link="bone_1"/>
     <origin xyz="0 0 210" rpy="0 0 0"/>
@@ -61,7 +61,7 @@
 
   <joint name="joint_2_to_bone_2" type="revolute">
     <axis xyz="1 0 0"/>
-    <limit lower="-1.39626" upper="1.39626" effort="1.0" velocity="1.0"/>
+    <limit lower="-1.48353" upper="1.48353" effort="1.0" velocity="1.0"/>
     <parent link="joint_2"/>
     <child link="bone_2"/>
     <origin xyz="0 0 210" rpy="0 0 0"/>
@@ -95,7 +95,7 @@
 
   <joint name="joint_3_to_bone_3" type="revolute">
     <axis xyz="1 0 0"/>
-    <limit lower="-1.39626" upper="1.39626" effort="1.0" velocity="1.0"/>
+    <limit lower="-1.48353" upper="1.48353" effort="1.0" velocity="1.0"/>
     <parent link="joint_3"/>
     <child link="bone_3"/>
     <origin xyz="0 0 210" rpy="0 0 0"/>
