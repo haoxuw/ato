@@ -1,0 +1,21 @@
+[MESSAGES CONTROL]
+disable=
+    missing-function-docstring,
+    missing-class-docstring,
+    missing-module-docstring,
+    logging-fstring-interpolation,
+    line-too-long,
+    no-member,
+    broad-except,
+    f-string-without-interpolation,
+    fixme,
+    too-many-arguments,
+    too-many-instance-attributes,
+    too-many-public-methods,
+    too-few-public-methods,
+    simplifiable-if-statement,
+    invalid-name,
+    no-else-return,
+    cyclic-import,
+    too-many-branches,
+    duplicate-code

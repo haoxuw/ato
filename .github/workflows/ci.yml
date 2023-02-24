@@ -1,0 +1,42 @@
+name: CI
+
+on:
+  pull_request:
+    branches:
+      - master
+  push:
+    branches:
+      - master
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        # cadquery requires python3.9+
+        python-version: ["3.9"]
+    steps:
+    - uses: actions/checkout@v3
+    - name: Set up Python ${{ matrix.python-version }}
+      uses: actions/setup-python@v3
+      with:
+        python-version: ${{ matrix.python-version }}
+    - name: Set up cadquery, which is required only by mesh, optional for control
+      run: |
+        pip install --pre cadquery
+        pip install -r requirements.txt
+        pip freeze
+    - name: Running pylint on control
+      run: |
+        ./control/scripts/lint.sh
+    - name: Running sanity tests on control
+      run: |
+        ./control/scripts/sanity.sh
+    - name: Running pylint on mesh
+      run: |
+        ./mesh/scripts/lint.sh
+    - name: Running sanity tests on mesh
+      run: |
+        ./mesh/scripts/sanity.sh --all
+    - name: Running pylint on learning
+      run: |
+        ./learning/scripts/lint.sh

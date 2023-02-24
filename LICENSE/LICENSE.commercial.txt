@@ -1,0 +1,5 @@
+This software is forever free for personal and educational usage.
+
+The software is distributed under a multi-licensing model, available for Proprietary and GPL. Meanwhile the structural design of the ato robotic arm would be addressed by pending patents for commercial applications.
+
+Licensees holding valid commercial ATOBOT CORP. (1000399600) licenses may use this software in accordance with the the terms contained in a written agreement between you and ATOBOT CORP. Alternatively, the terms and conditions that were accepted by the licensee when buying and/or downloading the software do apply.

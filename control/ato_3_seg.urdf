@@ -1,0 +1,128 @@
+<robot name="ato">
+  <link name="base_link">
+    <visual>
+      <origin rpy="0 0 0" xyz="0 0 0"/>
+      <geometry>
+      <mesh filename="file:///tmp/BoneAugmented_urdf_mesh.stl"/>
+      </geometry>
+    </visual>
+  </link>
+
+  <joint name="base_link_to_joint_1" type="revolute">
+    <axis xyz="0 0 1"/>
+    <limit lower="-1.5708" upper="3.14159" effort="1.0" velocity="1.0"/>
+    <parent link="base_link"/>
+    <child link="joint_1"/>
+    <origin xyz="0 0 0" rpy="0 0 0"/>
+  </joint>
+
+  <link name="joint_1">
+    <visual>
+      <origin rpy="0 0 0" xyz="0 0 0"/>
+      <geometry>
+      <mesh filename="file:///tmp/JointAugmented_urdf_mesh.stl"/>
+      </geometry>
+    </visual>
+  </link>
+
+  <joint name="joint_1_to_bone_1" type="revolute">
+    <axis xyz="1 0 0"/>
+    <limit lower="-1.39626" upper="1.39626" effort="1.0" velocity="1.0"/>
+    <parent link="joint_1"/>
+    <child link="bone_1"/>
+    <origin xyz="0 0 210" rpy="0 0 0"/>
+  </joint>
+
+  <link name="bone_1">
+    <visual>
+      <origin rpy="0 0 0" xyz="0 0 0"/>
+      <geometry>
+      <mesh filename="file:///tmp/BoneAugmented_urdf_mesh.stl"/>
+      </geometry>
+    </visual>
+  </link>
+
+  <joint name="bone_1_to_joint_2" type="revolute">
+    <axis xyz="0 0 1"/>
+    <limit lower="-1.5708" upper="3.14159" effort="1.0" velocity="1.0"/>
+    <parent link="bone_1"/>
+    <child link="joint_2"/>
+    <origin xyz="0 0 0" rpy="0 0 0"/>
+  </joint>
+
+  <link name="joint_2">
+    <visual>
+      <origin rpy="0 0 0" xyz="0 0 0"/>
+      <geometry>
+      <mesh filename="file:///tmp/JointAugmented_urdf_mesh.stl"/>
+      </geometry>
+    </visual>
+  </link>
+
+  <joint name="joint_2_to_bone_2" type="revolute">
+    <axis xyz="1 0 0"/>
+    <limit lower="-1.39626" upper="1.39626" effort="1.0" velocity="1.0"/>
+    <parent link="joint_2"/>
+    <child link="bone_2"/>
+    <origin xyz="0 0 210" rpy="0 0 0"/>
+  </joint>
+
+  <link name="bone_2">
+    <visual>
+      <origin rpy="0 0 0" xyz="0 0 0"/>
+      <geometry>
+      <mesh filename="file:///tmp/BoneAugmented_urdf_mesh.stl"/>
+      </geometry>
+    </visual>
+  </link>
+
+  <joint name="bone_2_to_joint_3" type="revolute">
+    <axis xyz="0 0 1"/>
+    <limit lower="-1.5708" upper="3.14159" effort="1.0" velocity="1.0"/>
+    <parent link="bone_2"/>
+    <child link="joint_3"/>
+    <origin xyz="0 0 0" rpy="0 0 0"/>
+  </joint>
+
+  <link name="joint_3">
+    <visual>
+      <origin rpy="0 0 0" xyz="0 0 0"/>
+      <geometry>
+      <mesh filename="file:///tmp/JointAugmented_urdf_mesh.stl"/>
+      </geometry>
+    </visual>
+  </link>
+
+  <joint name="joint_3_to_bone_3" type="revolute">
+    <axis xyz="1 0 0"/>
+    <limit lower="-1.39626" upper="1.39626" effort="1.0" velocity="1.0"/>
+    <parent link="joint_3"/>
+    <child link="bone_3"/>
+    <origin xyz="0 0 210" rpy="0 0 0"/>
+  </joint>
+
+  <link name="bone_3">
+    <visual>
+      <origin rpy="0 0 0" xyz="0 0 0"/>
+      <geometry>
+      <mesh filename="file:///tmp/GripperDragonWithServo_urdf_mesh.stl"/>
+      </geometry>
+    </visual>
+  </link>
+
+  <joint name="bone_3_to_endeffector" type="fixed">
+    <axis xyz="1 0 0"/>
+    <parent link="bone_3"/>
+    <child link="endeffector"/>
+    <origin xyz="0 0 147" rpy="0 0 0"/>
+  </joint>
+
+  <link name="endeffector_link">
+    <visual>
+      <origin rpy="0 0 0" xyz="0 0 0"/>
+      <geometry>
+       <box size="1 2 3"/>
+      </geometry>
+    </visual>
+  </link>
+</robot>

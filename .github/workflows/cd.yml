@@ -1,0 +1,35 @@
+name: CD
+
+on:
+  push:
+    branches:
+      - master
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        # cadquery requires python3.9+
+        python-version: ["3.9"]
+    steps:
+    - uses: actions/checkout@v3
+    - name: Set up Python ${{ matrix.python-version }}
+      uses: actions/setup-python@v3
+      with:
+        python-version: ${{ matrix.python-version }}
+    - name: Set up cadquery, which is required only by mesh, optional for control
+      run: |
+        pip install --pre cadquery
+        pip install -r requirements.txt
+    - name: Create mesh for CD
+      run: |
+        ./mesh/scripts/sanity.sh --export
+    - uses: shallwefootball/upload-s3-action@v1.2.0
+      name: Upload to S3
+      id: S3
+      with:
+        aws_key_id: ${{ secrets.AWS_KEY_ID }}
+        aws_secret_access_key: ${{ secrets.AWS_SECRET_ACCESS_KEY}}
+        aws_bucket: printable-mesh
+        source_dir: './mesh/generated/'
+        destination_dir: 'master'

@@ -1,0 +1,11 @@
+isort
+black==22.10.0
+pylint==2.15.5
+
+numpy
+scipy
+matplotlib
+pyPS4Controller
+ikpy
+pigpio
+# RPi.GPIO # pi OS should have GPIP installed by default, other os will use mock

@@ -1,0 +1,17 @@
+Bill Of Materials,,,,,,
+,,,,,,
+External Components,,,,,,
+Computer,Raspberry PI,,,,,
+Power,DC 10A 10V power supply,XT60 Cable Bullet/Banana Plugs,,,,
+Controller,Keyboard or PS4 controller,,,,,
+,,,,,,
+,,,,,,
+,,,,,,
+,,,,,,
+Arm Parts,M2X40 or 20,M3X16,Servo,Servo Wires,Connection,Power Wires
+Joint,8 horn_bolt,"4 corner, 4 fasten",,,,
+Bone,"8 horn_bolt, 1 latch",1 pitch shaft,,,,
+Segment,17,9,2 DS5160,2~6: >=10AWG Male To Female Futaba 3pin,2: Screw Terminal Block,2: XT60 Male to Female with JST
+Gripper,,"1 shaft, 1 horn_bolt, 2 fasten",DS3218,,,
+,,,,,,
+Total,17n,9n+4,2n + 1,2n~6n,2,2

@@ -1,0 +1,7 @@
+isort
+black==22.10.0
+pylint==2.15.5
+
+-r ./control/requirements.txt
+-r ./learning/requirements.txt
+
