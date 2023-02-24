@@ -157,6 +157,7 @@ class Ps4Joystick(Controller, input_device_interface.InputDeviceInterface):
     def on_L1_release(self):
         self.__update_input_states(key=Button.L1, value=False)
         if self.in_setting_mode:
+            self.__arm_controller_obj.recalibrate_servos()
             self.__arm_controller_obj.save_controller_states()
         else:
             if not self.controller_states[
@@ -276,12 +277,9 @@ class Ps4Joystick(Controller, input_device_interface.InputDeviceInterface):
         """L3 joystick is released after the click. This event is only detected when connecting without ds4drv"""
         self.__update_input_states(key=Button.L3, value=False)
         if self.in_setting_mode:
-            self.__arm_controller_obj.move_servos_to_calibration_position()
+            self.__arm_controller_obj.move_to_installation_position()
         else:
-            if self.controller_states[ControllerStates.IN_SAVING_TRAJECTORY_MODE]:
-                self.__arm_controller_obj.save_trajectory()
-            else:
-                self.__arm_controller_obj.start_saving_trajectory()
+            self.__arm_controller_obj.move_to_home_position()
         logging.debug("on_L3_release")
 
     def on_R3_up(self, value):
@@ -333,7 +331,10 @@ class Ps4Joystick(Controller, input_device_interface.InputDeviceInterface):
         """R3 joystick is released after the click. This event is only detected when connecting without ds4drv"""
         self.__joystick_internal_states[Button.R3] = False
         if self.in_setting_mode:
-            self.__arm_controller_obj.recalibrate_servos()
+            if self.controller_states[ControllerStates.IN_SAVING_TRAJECTORY_MODE]:
+                self.__arm_controller_obj.save_trajectory()
+            else:
+                self.__arm_controller_obj.start_saving_trajectory()
         else:
             self.__arm_controller_obj.replay_trajectory()
         logging.debug("on_R3_release")

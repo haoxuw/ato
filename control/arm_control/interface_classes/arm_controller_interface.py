@@ -50,7 +50,7 @@ class ArmControllerInterface(ABC):
         pass
 
     @abstractmethod
-    def move_servos_to_calibration_position(self):
+    def move_to_installation_position(self):
         pass
 
     @abstractmethod

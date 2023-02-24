@@ -107,6 +107,15 @@ class ActuatorPositions(Position):
             or cls.rotation_ranges is None
         )
 
+    @staticmethod
+    def get_index(segment_id: int, roll_not_pitch: bool):
+        return segment_id * 2 + (0 if roll_not_pitch else 1)
+
+    def set_position(self, val: numbers.Number, segment_id: int, roll_not_pitch: bool):
+        self.positions[
+            self.get_index(segment_id=segment_id, roll_not_pitch=roll_not_pitch)
+        ] = val
+
     @property
     def positions(self):
         return self.__actuator_positions
@@ -189,9 +198,12 @@ class ActuatorPositions(Position):
         return len(self.__actuator_positions)
 
     def __str__(self) -> str:
+        return f"@{self.positions}"
+
+    def info_str(self) -> str:
         return f"actuator @{self.positions}" + (
             f" segment_actuator_indices: { self.__class__.actuator_indices_mapping} gripper_index_mapping: { self.__class__.gripper_index_mapping}"
-            if self.__class__.actuator_indices_mapping
+            if self.__class__.actuator_indices_mapping is not None
             else ""
         )
 
