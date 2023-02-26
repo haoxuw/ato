@@ -23,7 +23,7 @@ import numpy as np
 from scipy.spatial.transform import Rotation
 
 try:
-    sys.path.append(f"{pathlib.Path(__file__).parent}/../../learning/")
+    sys.path.append(f"{pathlib.Path(__file__).parent}/../../ato_learning/")
     # pylint: disable=import-error
     from learn_kinematics import forward_kinematics, inverse_kinematics
 except Exception as import_e:

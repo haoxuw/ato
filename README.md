@@ -63,7 +63,7 @@ Meanwhile the CD pipeline keeps the following STL in sync with master branch:
 + [BoneSeparablePitchOnly](https://printable-mesh.s3.us-east-2.amazonaws.com/master/pitch_only_BoneSeparableVertical_pitch_only__printable_mesh.stl)
 + [Gripper](https://printable-mesh.s3.us-east-2.amazonaws.com/master/GripperDragonWithServo_printable_mesh.stl)
 
-You can also customize them, see details in mesh/
+You can also customize them, see details in ato_mesh/[README.md](https://github.com/haoxuw/ato/blob/master/ato_mesh/README.md)
 
 ### 3D print those mesh
 
