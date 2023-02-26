@@ -100,6 +100,8 @@ class ArmController(arm_controller_interface.ArmControllerInterface):
             rotation_ranges=self._get_indexed_rotation_ranges()
         )
 
+        motion.EndeffectorPose.set_ikpy_robot_chain(urdf_filename="ato_3_seg.urdf")
+
         self.frame_rate = frame_rate
         self.interval_ms = 1000 // frame_rate
 
@@ -142,22 +144,38 @@ class ArmController(arm_controller_interface.ArmControllerInterface):
         self.__controller_start_time = datetime.now()
         self.ready = True
 
-        # initially pos = ik(fk(pose)) must be true
-        assert self.validate_fk_ik()  # also touches lazy-loading contents
+        # initially pos = ik(fk(pose)) should be true
+        if not self.validate_fk_ik(
+            joint_positions_sent_to_hardware=self.__get_indexed_actuator_positions(),
+            estimated_ee_pose_via_fk=self.__get_endeffector_pose(),
+        )[0]:
+            logging.warning(f"Failed to validate_fk_ik: {self.validate_fk_ik()[1]}")
 
-    def validate_fk_ik(self):
-        joint_positions_sent_to_hardware = (self.__get_indexed_actuator_positions(),)
-        estimated_ee_pose_via_fk = self.__get_endeffector_pose()
+    @property
+    def is_at_home_position(self):
+        return np.allclose(
+            self.home_position,
+            self.__get_indexed_actuator_positions(),
+            rtol=0.001,
+        )  # 0.1% tolerance
+
+    def validate_fk_ik(
+        self, joint_positions_sent_to_hardware, estimated_ee_pose_via_fk
+    ):
         joint_positions_solved_by_ik = (
             self.__solve_best_inverse_kinematics(
                 target_pose=motion.EndeffectorPose(pose=estimated_ee_pose_via_fk)
             ),
         )
-        return np.allclose(
+        return (
+            np.allclose(
+                joint_positions_sent_to_hardware,
+                joint_positions_solved_by_ik,
+                rtol=0.01,  # 1% tolerance
+            ),
             joint_positions_sent_to_hardware,
             joint_positions_solved_by_ik,
-            rtol=0.01,  # 1% tolerance
-        ), (joint_positions_solved_by_ik, joint_positions_solved_by_ik)
+        )
 
     def get_joystick_input_states(self):
         return self.__joystick_input_states
@@ -218,11 +236,19 @@ class ArmController(arm_controller_interface.ArmControllerInterface):
             folder = os.path.expanduser(folder)
 
             pathlib.Path(folder).mkdir(parents=True, exist_ok=True)
-
             file_path = os.path.join(folder, filename)
+
             if not dry_run:
                 with open(file_path, "w", encoding="utf-8") as fout:
-                    json.dump(arm_config, fout)
+                    json.dump(
+                        arm_config,
+                        fout,
+                        indent=4,
+                        sort_keys=True,
+                        default=lambda var: var.item()
+                        if isinstance(var, np.generic)
+                        else var,
+                    )
                     logging.debug(f"Saved to {file_path}")
                     fout.close()
         except Exception as e:
@@ -336,7 +362,6 @@ class ArmController(arm_controller_interface.ArmControllerInterface):
             self.__get_current_actuator_position_obj().positions[:-1]
         )  # [:-1] to remove gripper
         target_positions = target_pose.inverse_kinematics_math_based(
-            robot_urdf="ato_3_seg.urdf",
             current_actuator_positions=current_actuator_positions,
         )
         return target_positions
@@ -345,13 +370,19 @@ class ArmController(arm_controller_interface.ArmControllerInterface):
         for servo in self._indexed_servo_objs:
             servo.move_to_installation_position()
 
-    def move_to_home_position(self):
+    # if already at home position, move all actuators to logical zero (installation position)
+    def move_to_home_position_otherwise_zeros(self):
         num_servos = 7
         assert (
             len(self._indexed_servo_names) == num_servos
         ), f"Currently this function only support for {(num_servos-1)/2} segment arm."
-        actuator_positions = motion.ActuatorPositions(positions=self.home_position)
-        self.move_to_actuator_positions(actuator_positions=actuator_positions)
+
+        if self.is_at_home_position:
+            actuator_positions = motion.ActuatorPositions(positions=[0] * num_servos)
+            self.move_to_actuator_positions(actuator_positions=actuator_positions)
+        else:
+            actuator_positions = motion.ActuatorPositions(positions=self.home_position)
+            self.move_to_actuator_positions(actuator_positions=actuator_positions)
 
     def __reset_trajectory(self):
         self.__active_trajectory: motion.TrajectoryActuatorPositions = (

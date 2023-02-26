@@ -277,7 +277,7 @@ class Ps4Joystick(Controller, input_device_interface.InputDeviceInterface):
         if self.in_setting_mode:
             self.__arm_controller_obj.move_to_installation_position()
         else:
-            self.__arm_controller_obj.move_to_home_position()
+            self.__arm_controller_obj.move_to_home_position_otherwise_zeros()
         logging.debug("on_L3_release")
 
     def on_R3_up(self, value):

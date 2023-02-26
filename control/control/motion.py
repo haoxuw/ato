@@ -314,6 +314,8 @@ class ActuatorPositions(Position):
 
 
 class EndeffectorPose(Position):
+    robot_chain = None
+
     def __init__(self, pose, gripper_position=0) -> None:
         self.set(sequence=pose)
         self.__gripper_position = gripper_position
@@ -396,25 +398,31 @@ class EndeffectorPose(Position):
     def __str__(self) -> str:
         return f"XYZ: ({self.x},{self.y},{self.z}); RPY: ({self.roll},{self.pitch},{self.yaw})"
 
-    def inverse_kinematics_math_based(
-        self, robot_urdf, current_actuator_positions, align_orientation=False
-    ):
-        robot = ikpy.chain.Chain.from_urdf_file(
-            robot_urdf, active_links_mask=[False] + [True] * 6 + [False]
+    @classmethod
+    def set_ikpy_robot_chain(cls, urdf_filename):
+        cls.robot_chain = ikpy.chain.Chain.from_urdf_file(
+            urdf_filename, active_links_mask=[False] + [True] * 6 + [False]
         )
+
+    def inverse_kinematics_math_based(
+        self, current_actuator_positions, align_orientation=False
+    ):
         initial_position = np.radians(
             np.concatenate([[0], current_actuator_positions, [0]])
         )
+        target_orientation = Rotation.from_euler(
+            "XYZ", self.rpy, degrees=True
+        ).as_matrix()
+
+        # if align all, or only z or only pos
         if align_orientation:
-            target_orientation = Rotation.from_euler(
-                "XYZ", self.rpy, degrees=True
-            ).as_matrix()
             orientation_mode = "all"
         else:
-            target_orientation = [0, 0, 1]  # unit vector of x axis
-            orientation_mode = "X"
+            # to align with unit vector of z axis -- because gripper was pointing upwards at installation
+            target_orientation = target_orientation[2]
+            orientation_mode = "Z"
         try:
-            joint_positions = robot.inverse_kinematics(
+            joint_positions = self.robot_chain.inverse_kinematics(
                 target_position=self.xyz,
                 initial_position=initial_position,
                 target_orientation=target_orientation,
@@ -423,7 +431,7 @@ class EndeffectorPose(Position):
         except Exception as e:
             logging.warning(f"Skipped IK, exception: {e}")
             return None
-        # logging.info(robot.forward_kinematics(joint_positions))
+        # logging.info(self.robot_chain.forward_kinematics(joint_positions))
         joint_positions = joint_positions[1:7] * 180.0 / np.pi
         # logging.error(f"target_pose {target_pose} joint_positions {joint_positions}")
         actuator_positions = np.append(
@@ -611,7 +619,6 @@ class TrajectoryEndeffectorPose(Trajectory):
             previous_pose: EndeffectorPose
             new_positions = new_pose.inverse_kinematics_math_based(
                 current_actuator_positions=current_positions[:-1],
-                current_pose=previous_pose.pose,
             )
             if new_positions is None:
                 continue

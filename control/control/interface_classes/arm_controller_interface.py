@@ -11,7 +11,7 @@
 from abc import ABC, abstractmethod
 
 
-# shows the API of ArmController
+# shows the API of ArmController using either joystick or keyboard
 class ArmControllerInterface(ABC):
     @abstractmethod
     def get_joystick_input_states(self):
