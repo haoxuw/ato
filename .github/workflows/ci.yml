@@ -27,16 +27,16 @@ jobs:
         pip freeze
     - name: Running pylint on control
       run: |
-        ./control/scripts/lint.sh
+        ./ato_control/scripts/lint.sh
     - name: Running sanity tests on control
       run: |
-        ./control/scripts/sanity.sh
+        ./ato_control/scripts/sanity.sh
     - name: Running pylint on mesh
       run: |
-        ./mesh/scripts/lint.sh
+        ./ato_mesh/scripts/lint.sh
     - name: Running sanity tests on mesh
       run: |
-        ./mesh/scripts/sanity.sh --all
+        ./ato_mesh/scripts/sanity.sh --all
     - name: Running pylint on learning
       run: |
-        ./learning/scripts/lint.sh
+        ./ato_learning/scripts/lint.sh

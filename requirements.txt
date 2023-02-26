@@ -3,6 +3,6 @@ pytest-profiling
 black==22.10.0
 pylint==2.15.5
 
--r ./control/requirements.txt
--r ./learning/requirements.txt
+-r ./ato_control/requirements.txt
+-r ./ato_learning/requirements.txt
 

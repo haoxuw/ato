@@ -20,7 +20,7 @@ In case you may want to tweak the structural design, or configuration, such as t
 
 ## Example commands to generate STL files
 
-> $ ./mesh/scripts/delete_all_stl.sh && ./mesh/scripts/generate_shelf.sh --export -o mesh/generated
+> $ ./ato_mesh/scripts/delete_all_stl.sh && ./ato_mesh/scripts/generate_shelf.sh --export -o mesh/generated
 
 ## Code architecture
 

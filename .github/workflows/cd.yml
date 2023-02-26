@@ -23,7 +23,7 @@ jobs:
         pip install -r requirements.txt
     - name: Create mesh for CD
       run: |
-        ./mesh/scripts/sanity.sh --export
+        ./ato_mesh/scripts/sanity.sh --export
     - uses: shallwefootball/upload-s3-action@v1.2.0
       name: Upload to S3
       id: S3
@@ -31,5 +31,5 @@ jobs:
         aws_key_id: ${{ secrets.AWS_KEY_ID }}
         aws_secret_access_key: ${{ secrets.AWS_SECRET_ACCESS_KEY}}
         aws_bucket: printable-mesh
-        source_dir: './mesh/generated/'
+        source_dir: './ato_mesh/generated/'
         destination_dir: 'master'
