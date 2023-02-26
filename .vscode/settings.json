@@ -12,6 +12,7 @@
     },
     "cSpell.words": [
         "aliexpress",
+        "allclose",
         "amax",
         "astype",
         "ATOBOT",
@@ -52,6 +53,7 @@
         "relu",
         "roslaunch",
         "rotvec",
+        "rtol",
         "scipy",
         "torchsummary",
         "torchvision",

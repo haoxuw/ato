@@ -10,6 +10,7 @@
 
 from . import (
     arm_controller,
+    arm_controller_ml_training,
     config_and_enums,
     interface_classes,
     motion,
