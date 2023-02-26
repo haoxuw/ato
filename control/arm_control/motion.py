@@ -17,11 +17,9 @@ from abc import ABC, abstractmethod
 from typing import List, Tuple
 
 import ikpy.chain
-import ikpy.utils.plot as plot_utils
 import numpy as np
 from scipy.spatial.transform import Rotation
 
-from control.arm_control.config_and_enums import arm_connection_config
 
 try:
     from learning.learn_kinematics import forward_kinematics, inverse_kinematics
@@ -398,7 +396,9 @@ class EndeffectorPose(Position):
     def inverse_kinematics_math_based(
         self, robot_urdf, current_actuator_positions, align_orientation=False
     ):
-        robot = ikpy.chain.Chain.from_urdf_file(robot_urdf)
+        robot = ikpy.chain.Chain.from_urdf_file(
+            robot_urdf, active_links_mask=[False] + [True] * 6 + [False]
+        )
         initial_position = np.radians(
             np.concatenate([[0], current_actuator_positions, [0]])
         )
@@ -408,19 +408,19 @@ class EndeffectorPose(Position):
             ).as_matrix()
             orientation_mode = "all"
         else:
-            target_orientation = None
-            orientation_mode = None
+            target_orientation = [0, 0, 1]  # unit vector of x axis
+            orientation_mode = "X"
         try:
             joint_positions = robot.inverse_kinematics(
                 target_position=self.xyz,
-                initial_position=initial_position,
+                # initial_position=initial_position,
                 target_orientation=target_orientation,
                 orientation_mode=orientation_mode,
             )
         except Exception as e:
             logging.warning(f"Skipped IK, exception: {e}")
             return None
-        logging.warning(robot.forward_kinematics(joint_positions))
+        # logging.info(robot.forward_kinematics(joint_positions))
         joint_positions = joint_positions[1:7] * 180.0 / np.pi
         # logging.error(f"target_pose {target_pose} joint_positions {joint_positions}")
         actuator_positions = np.append(
@@ -494,7 +494,7 @@ class Trajectory:
             return 0
         return len(self.__trajectory)
 
-    def _append_vector(self, timestamp: float, vector: collections.Sequence):
+    def _append_vector(self, timestamp: float, vector: collections.abc.Sequence):
         if len(self.__trajectory) > 0 and timestamp <= self.__trajectory[-1][0]:
             return
         if self.__dim is None:

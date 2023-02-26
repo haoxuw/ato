@@ -111,7 +111,6 @@
   </link>
 
   <joint name="bone_3_to_endeffector" type="fixed">
-    <axis xyz="1 0 0"/>
     <parent link="bone_3"/>
     <child link="endeffector"/>
     <origin xyz="0 0 147" rpy="0 0 0"/>

@@ -14,12 +14,8 @@ SCRIPT_FOLDER_PATH=$(dirname ${SCRIPT_FILE_PATH})
 
 MAX_WAIT_TIME=5 # run for 5s
 cd "${SCRIPT_FOLDER_PATH}/../"
-timeout "${MAX_WAIT_TIME}" ./scripts/activate_arm.sh --sanity_test
-if [ $? -ne 124 ];
-then
-    echo 'Control module failed to initialize or gracefully terminate.'
-    exit -3
-fi
+
+PYTHONPATH=../ python -m pytest tests/
 
 echo
 echo "Sanity passed"
