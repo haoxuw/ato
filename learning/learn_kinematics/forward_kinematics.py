@@ -9,14 +9,10 @@
 # See more details in the LICENSE folder.
 
 import logging
-import os
 
-import numpy as np
 import pytorch_lightning as pl
 import torch
 from learn_kinematics import pl_module_wrapper
-from torch.nn import functional as F
-from torch.utils.data import TensorDataset
 
 
 # pylint: disable=unused-argument,unused-variable
@@ -68,7 +64,7 @@ class ForwardKinematics(pl_module_wrapper.PlModuleWrapper):
         dense = self.fk_dense(x_batch).view(-1, self.num_actuators)
 
         pose = dense + conv
-        loss = F.mse_loss(pose, y_batch)
+        loss = torch.nn.functional.mse_loss(pose, y_batch)
         if logging_interval > 0 and (batch_idx % logging_interval) == 0:
             logging.info(
                 f"x_batch[0]: {x_batch[0]} \n y_batch    [0]: {y_batch[0]} \n y_batch_hat[0]: {pose[0]}"

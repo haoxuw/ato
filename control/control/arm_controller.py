@@ -10,7 +10,6 @@
 
 import collections
 import copy
-import functools
 import json
 import logging
 import numbers
@@ -53,7 +52,9 @@ class ArmController(arm_controller_interface.ArmControllerInterface):
         ),  # angular velocity
         cartesian_velocities_deg_per_ms=tuple(i * 0.01 for i in range(1, 10)),
         initial_velocity_level=2,
+        home_position=(0, 60, 0, 80, 0, -50, 0),
     ):
+        self.home_position = home_position
         assert isinstance(pi_obj, raspberry_pi.RaspberryPi)
         self.__pi_obj = pi_obj
 
@@ -125,9 +126,9 @@ class ArmController(arm_controller_interface.ArmControllerInterface):
         # where is the intended pose
         self.__intended_pose: motion.EndeffectorPose = None
         # where is the (realistic) attempted pose (best effort towards the intended pose, because not all pose are reachable)
-        self.__attempted_pose: motion.EndeffectorPose = None
+        # self.__attempted_pose: motion.EndeffectorPose = None
         # where is the attempted joint positions == IK(attempted pose)
-        self.__attempted_joint_positions: motion.ActuatorPositions = None
+        # self.__attempted_joint_positions: motion.ActuatorPositions = None
         # where is the current joint positions, max velocity may not keep up achieving the attempted
         # is self.__current_actuator_positions
 
@@ -344,16 +345,12 @@ class ArmController(arm_controller_interface.ArmControllerInterface):
         for servo in self._indexed_servo_objs:
             servo.move_to_installation_position()
 
-    def move_to_home_position(self, home_pitch=[60, 80, -50]):
+    def move_to_home_position(self):
         num_servos = 7
         assert (
             len(self._indexed_servo_names) == num_servos
         ), f"Currently this function only support for {(num_servos-1)/2} segment arm."
-        actuator_positions = motion.ActuatorPositions(positions=[0] * num_servos)
-        for segment_id, pitch in enumerate(home_pitch):
-            actuator_positions.set_position(
-                val=pitch, segment_id=segment_id, roll_not_pitch=False
-            )
+        actuator_positions = motion.ActuatorPositions(positions=self.home_position)
         self.move_to_actuator_positions(actuator_positions=actuator_positions)
 
     def __reset_trajectory(self):
@@ -536,7 +533,6 @@ class ArmController(arm_controller_interface.ArmControllerInterface):
             "start_time": datetime.now(),
             "trajectory": copy.deepcopy(trajectory),
         }
-        return None
 
     def move_to_actuator_positions(
         self, actuator_positions: motion.ActuatorPositions, pause_sec: float = 1
@@ -737,12 +733,12 @@ class ArmController(arm_controller_interface.ArmControllerInterface):
         return position
 
     def describe_current_actuator_positions(self):
-        self.actuator_positions_dict = {}
+        actuator_positions_dict = {}
         for unique_name, servo_obj in zip(
             self._indexed_servo_names, self._indexed_servo_objs
         ):
-            self.actuator_positions_dict[unique_name] = servo_obj.payload_position
-        return self.actuator_positions_dict
+            actuator_positions_dict[unique_name] = servo_obj.payload_position
+        return actuator_positions_dict
 
     def __do_internal_updates_for_current_actuator_positions(self):
         # calculate forward_kinematics and cache
@@ -857,7 +853,7 @@ class ArmController(arm_controller_interface.ArmControllerInterface):
             uvw,
             length,
             axes_mapping=(0, 1, 2),
-            color=["red", "green", "blue"],
+            color=("red", "green", "blue"),
             is_degrees=True,
         ):
             if is_degrees:

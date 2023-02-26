@@ -25,9 +25,7 @@ class ServoDs5160(servo_interface.ServoInterface):
             position_max_pulsewidth = 2500
             position_max = 180
         else:
-            assert (
-                False
-            ), f"Unexpected self.__servo_max_position == {self.__servo_max_position}"
+            assert False, f"Unexpected servo_max_position == {servo_max_position}"
         # assert position>=0 and position<=position_max
         dc_per_position = (
             position_max_pulsewidth - position_0_pulsewidth

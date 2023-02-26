@@ -46,4 +46,5 @@ ch.setFormatter(ColoredFormatter())
 logger.handlers.clear()
 logger.addHandler(ch)
 
+# pylint: disable=consider-using-f-string
 np.set_printoptions(formatter={"float": lambda x: "{0:0.3f}".format(x)})

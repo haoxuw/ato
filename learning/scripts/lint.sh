@@ -9,7 +9,6 @@
 # MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.
 # See more details in the LICENSE folder.
 
-set -e
 SCRIPT_FILE_PATH=$(readlink -f ${BASH_SOURCE[0]})
 SCRIPT_FOLDER_PATH=$(dirname ${SCRIPT_FILE_PATH})
 
@@ -23,7 +22,7 @@ isort --version
 isort . --check-only || { echo 'Linting failed, need to run $ isort learn'; exit -3; }
 
 pylint --version
-pylint learn_kinematics || { echo 'Linting failed.'; exit -4; }
+pylint learn_kinematics --rcfile ../.pylintrc || { echo 'Linting failed.'; exit -4; }
 
 echo
 echo "Linting passed"

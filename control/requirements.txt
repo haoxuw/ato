@@ -3,6 +3,7 @@ pytest-profiling
 black==22.10.0
 pylint==2.15.5
 
+pytorch_lightning
 numpy
 scipy
 matplotlib

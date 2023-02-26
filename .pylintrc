@@ -1,5 +1,11 @@
 [MESSAGES CONTROL]
 disable=
+    too-many-locals,
+    unused-argument,
+    unnecessary-lambda,
+    too-many-ancestors,
+    arguments-differ,
+    consider-using-generator,
     missing-function-docstring,
     missing-class-docstring,
     missing-module-docstring,
