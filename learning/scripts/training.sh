@@ -18,7 +18,7 @@ source ./scripts/setup_venv.sh > /dev/null
 
 tensorboard --logdir ~/.ato/artifacts/lightning_logs/ &
 
-{ PYTHONPATH=../ python training.py $@; } || { echo -e "\n\n\t *** ML script terminated unexpectedly ***\n\n"; exit -2; }
+{ python training.py $@; } || { echo -e "\n\n\t *** ML script terminated unexpectedly ***\n\n"; exit -2; }
 
 echo
 echo "Learning script exited succesfully"

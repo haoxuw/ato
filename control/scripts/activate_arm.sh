@@ -22,7 +22,7 @@ if [ "$EUID" -eq 0 ]
   echo 'Warning: failed to launch pigpiod, assuming not running on pi.'
 fi
 
-{ PYTHONPATH=../ python activate_arm.py $@; } || { echo -e "\n\n\t *** Arm controller was not able to gracefully terminate ***\n\n"; exit -2; }
+{ python activate_arm.py $@; } || { echo -e "\n\n\t *** Arm controller was not able to gracefully terminate ***\n\n"; exit -2; }
 
 echo
 echo "Arm controller exited succesfully"

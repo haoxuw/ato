@@ -11,15 +11,13 @@
 import argparse
 import time
 
-from control.arm_control import (
+from control import (
     arm_controller,
     arm_controller_ml_training,
     ps4_joystick,
     raspberry_pi,
 )
-from control.arm_control.config_and_enums.arm_connection_config import (
-    arm_segments_config,
-)
+from control.config_and_enums.arm_connection_config import arm_segments_config
 
 
 def get_args():
@@ -51,6 +49,11 @@ def get_args():
         help="Do not run the arm, but generate training data.",
     )
     parser.add_argument(
+        "--frame_rate",
+        type=int,
+        default=10,
+    )
+    parser.add_argument(
         "--training_data_filepath_prefix",
         type=str,
         default="~/.ato/training_data",
@@ -64,14 +67,14 @@ def create_arm_controller_obj(args, for_training=False):
     joystick = ps4_joystick.Ps4Joystick(interface=f"/dev/input/js{str(args.input_js)}")
     if for_training:
         arm_ctl = arm_controller_ml_training.ArmControllerMlTraining(
-            frame_rate=20,
+            frame_rate=args.frame_rate,
             pi_obj=pi,
             joystick_obj=joystick,
             arm_segments_config=arm_segments_config,
         )
     else:
         arm_ctl = arm_controller.ArmController(
-            frame_rate=20,
+            frame_rate=args.frame_rate,
             pi_obj=pi,
             joystick_obj=joystick,
             arm_segments_config=arm_segments_config,
