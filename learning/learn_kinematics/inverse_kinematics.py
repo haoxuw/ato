@@ -15,12 +15,11 @@ import os
 import numpy as np
 import pytorch_lightning as pl
 import torch
+from learn_kinematics import forward_kinematics, pl_module_wrapper
 from torch import nn
 from torch.nn import functional as F
 from torch.utils.data import DataLoader, Dataset, TensorDataset, random_split
 from torchvision import transforms
-
-from learning.learn_kinematics import forward_kinematics, pl_module_wrapper
 
 # pylint: disable=unused-argument,unused-variable
 

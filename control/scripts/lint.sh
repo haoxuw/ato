@@ -23,7 +23,7 @@ isort --version
 isort . --check-only || { echo 'Linting failed, need to run $ isort control'; exit -3; }
 
 pylint --version
-pylint . || { echo 'Linting failed.'; exit -4; }
+pylint control || { echo 'Linting failed.'; exit -4; }
 
 echo
 echo "Linting passed"

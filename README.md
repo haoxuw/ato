@@ -33,15 +33,15 @@ This repo is composed of 2 sub projects of ato:
 
 list of neat features
  * mesh:
-  -- Visualize printable STLs, and their compositional parts on a virtual shelf
+   * Visualize printable STLs, and their compositional parts on a virtual shelf
  * control:
-  -- Joint space control
-  -- Cartesian space control using IK
-  -- Control with PS4 controller
-  -- Visualized arm simulation using matlab plots
-  -- Trajectory replay
+   * Joint space control
+   * Cartesian space control using IK
+   * Control with PS4 controller
+   * Visualized arm simulation using matlab plots
+   * Trajectory replay
  * learning
- -- Training auto save, modify data/lr and continue
+   * Training auto save, modify data/lr and continue
  ## Try it out!
 
 For details visit the README.md in each project folder. Meanwhile here's a bird eye view.
@@ -55,7 +55,7 @@ To manufacture the 3D Printable Structures, you have some options:
 
 #### Download released mesh
 
-> STL files are available at the [resources branch](https://github.com/haoxuw/ato/tree/master-resources/printable_mesh).
+STL files are available at the [resources branch](https://github.com/haoxuw/ato/tree/master-resources/printable_mesh).
 
 Meanwhile the CD pipeline keeps the following STL in sync with master branch:
 + [Segment](https://printable-mesh.s3.us-east-2.amazonaws.com/master/SegmentAugmented_printable_mesh.stl)
@@ -63,11 +63,7 @@ Meanwhile the CD pipeline keeps the following STL in sync with master branch:
 + [BoneSeparablePitchOnly](https://printable-mesh.s3.us-east-2.amazonaws.com/master/pitch_only_BoneSeparableVertical_pitch_only__printable_mesh.stl)
 + [Gripper](https://printable-mesh.s3.us-east-2.amazonaws.com/master/GripperDragonWithServo_printable_mesh.stl)
 
-#### Make your customized mesh
-
-Built on top of cadquery, the code in /mesh/ defines the 3D printable meshes of the arm, while strictly and literally practicing object oriented programming.
-
-In case you may want to tweak the structural design, or configuration, such as to alter length or girth. Once your changes passes the continuous integration git actions pipeline (CI), it would be greatly appreciated if you would contribute back to this open source project via pull requests.
+You can also customize them, see details in mesh/
 
 ### 3D print those mesh
 

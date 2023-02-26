@@ -8,18 +8,13 @@
 # MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.
 # See more details in the LICENSE folder.
 
-import numpy as np
 import logging
 import time
 
-from control.arm_control import (
-    arm_controller,
-    ps4_joystick,
-    raspberry_pi,
-)
-from control.arm_control.config_and_enums.arm_connection_config import (
-    arm_segments_config,
-)
+import numpy as np
+
+from control import arm_controller, ps4_joystick, raspberry_pi
+from control.config_and_enums.arm_connection_config import arm_segments_config
 
 
 def test_component_obj_creation():
@@ -34,7 +29,7 @@ def test_component_obj_creation():
     )
 
 
-def test_move_right_left():
+def test_move_L3():
     pi = raspberry_pi.RaspberryPi()
     joystick = ps4_joystick.Ps4Joystick(interface=f"/dev/input/js0")
 
@@ -43,6 +38,7 @@ def test_move_right_left():
         pi_obj=pi,
         joystick_obj=joystick,
         arm_segments_config=arm_segments_config,
+        auto_save_controller_states_to_file=False,
     )
 
     arm_ctl.start_threads(start_joystick_thread=False)

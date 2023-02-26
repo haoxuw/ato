@@ -6,15 +6,21 @@
 
 ### Download pre-defined mesh
 
-## Build customized arm
+STL files are available at the [resources branch](https://github.com/haoxuw/ato/tree/master-resources/printable_mesh).
 
-### Make modifications
+### Make your customized mesh
 
-#### Installation
+Built on top of cadquery, the code in /mesh/ defines the 3D printable meshes of the arm, while strictly and literally practicing object oriented programming.
 
-#### Example commands to generate STL files
+In case you may want to tweak the structural design, or configuration, such as to alter length or girth. Once your changes passes the continuous integration git actions pipeline (CI), it would be greatly appreciated if you would contribute back to this open source project via pull requests.
 
-> $ ./scripts/delete_all_stl.sh && ./scripts/generate_shelf.sh --export -o generated
+#### Make modifications
+
+##### Installation
+
+## Example commands to generate STL files
+
+> $ ./mesh/scripts/delete_all_stl.sh && ./mesh/scripts/generate_shelf.sh --export -o mesh/generated
 
 ## Code architecture
 
