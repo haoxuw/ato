@@ -12,6 +12,7 @@ from . import (
     arm_controller,
     config_and_enums,
     interface_classes,
+    motion,
     ps4_joystick,
     raspberry_pi,
     servo_ds3218,

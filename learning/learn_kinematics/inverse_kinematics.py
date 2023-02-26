@@ -10,16 +10,11 @@
 
 
 import logging
-import os
 
 import numpy as np
 import pytorch_lightning as pl
 import torch
-from learn_kinematics import forward_kinematics, pl_module_wrapper
-from torch import nn
-from torch.nn import functional as F
-from torch.utils.data import DataLoader, Dataset, TensorDataset, random_split
-from torchvision import transforms
+from learn_kinematics import pl_module_wrapper
 
 # pylint: disable=unused-argument,unused-variable
 
@@ -56,7 +51,7 @@ class InverseKinematics(pl_module_wrapper.PlModuleWrapper):
             output_channel=6,
             tanh_in_every=-1,
         )  # input (b, 12+self.num_actuators, 1) output (b, 1, 6)
-        self.ik_last_activation = nn.ReLU6()
+        self.ik_last_activation = torch.nn.ReLU6()
 
         rotation_ranges = np.array(rotation_ranges)
         self.rotation_ranges_min_np = rotation_ranges[:, 0]
@@ -95,7 +90,7 @@ class InverseKinematics(pl_module_wrapper.PlModuleWrapper):
         dense = self.ik_dense(x_batch_2D).view(-1, self.num_actuators)
 
         y_batch_hat = self.ik_last_activation(dense + conv)
-        loss = F.mse_loss(y_batch_hat, y_batch)
+        loss = torch.nn.functional.mse_loss(y_batch_hat, y_batch)
 
         if logging_interval > 0 and (batch_idx % logging_interval) == 0:
             # current_pose is used as auxiliary feature

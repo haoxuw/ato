@@ -11,10 +11,7 @@
 from abc import abstractmethod
 
 import cadquery as cq
-from mesh.configuration import segment_configuration
-from mesh.cq_lib import cq_mesh
 from mesh.model_structure.segment import bone_separable
-from mesh.model_structure.segment.abstractions import bone_abstract
 
 
 # base class of a gripper attached to a separable bone, can be connected to a pitch bone

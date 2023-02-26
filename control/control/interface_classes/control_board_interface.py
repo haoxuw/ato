@@ -13,7 +13,7 @@ from abc import ABC, abstractmethod
 
 class ControlBoardInterface(ABC):
     @abstractmethod
-    def update_pulsewidth(self, pulsewidth, position, header_id, show_info=False):
+    def update_pulsewidth(self, pulsewidth, header_id):
         pass
 
     @abstractmethod

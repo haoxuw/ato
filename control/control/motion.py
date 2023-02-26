@@ -13,6 +13,8 @@ import collections
 import json
 import logging
 import numbers
+import pathlib
+import sys
 from abc import ABC, abstractmethod
 from typing import List, Tuple
 
@@ -21,9 +23,11 @@ import numpy as np
 from scipy.spatial.transform import Rotation
 
 try:
+    sys.path.append(f"{pathlib.Path(__file__).parent}/../../learning/")
+    # pylint: disable=import-error
     from learn_kinematics import forward_kinematics, inverse_kinematics
-except Exception as e:
-    logging.warning(f"Failed to import learning package, will skip due to: {e}")
+except Exception as import_e:
+    logging.warning(f"Skipped importing the learning package, due to: {import_e}")
 
 
 class Position(ABC):
@@ -183,7 +187,7 @@ class ActuatorPositions(Position):
         self.__actuator_positions = np.array(sequence)
 
     def to_tuple(self):
-        return tuple([val for val in self.__actuator_positions])
+        return tuple(val for val in self.__actuator_positions)
 
     def to_np(self):
         return self.__actuator_positions
@@ -378,7 +382,7 @@ class EndeffectorPose(Position):
         self.__gripper_position += gripper_delta
 
     def to_tuple(self):
-        return tuple([val for val in np.append(self.__pose, self.__gripper_position)])
+        return tuple(val for val in np.append(self.__pose, self.__gripper_position))
 
     def to_np(self):
         return self.__pose
@@ -412,7 +416,7 @@ class EndeffectorPose(Position):
         try:
             joint_positions = robot.inverse_kinematics(
                 target_position=self.xyz,
-                # initial_position=initial_position,
+                initial_position=initial_position,
                 target_orientation=target_orientation,
                 orientation_mode=orientation_mode,
             )

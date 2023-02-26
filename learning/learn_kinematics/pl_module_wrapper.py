@@ -39,6 +39,9 @@ class PlModuleWrapper(pl.LightningModule):
             log_graph=True,
         )
         self.save_hyperparameters()
+        self._train_loader = None
+        self._val_loader = None
+        self._test_loader = None
 
     def _setup_datasets(self, data_x_filepath, data_y_filepath, batch_size):
         dataset = self._get_dataset(
