@@ -11,8 +11,6 @@
 import logging
 import threading
 
-from pyPS4Controller.controller import Controller
-
 import control.arm_controller
 from control.config_and_enums.joystick_input_types import (
     Button,
@@ -20,6 +18,7 @@ from control.config_and_enums.joystick_input_types import (
     JoystickAxis,
 )
 from control.interface_classes import input_device_interface
+from pyPS4Controller.controller import Controller
 
 
 class Ps4Joystick(Controller, input_device_interface.InputDeviceInterface):

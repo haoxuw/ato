@@ -325,7 +325,7 @@ class EndeffectorPose(Position):
     robot_chain = None
 
     def __init__(self, pose, gripper_position=0) -> None:
-        self.set(sequence=pose)
+        self.__pose = pose
         self.__gripper_position = gripper_position
 
     @property
@@ -368,9 +368,11 @@ class EndeffectorPose(Position):
     def pose(self):
         return self.__pose
 
-    def set(self, sequence):
+    def set(self, sequence, gripper_position=None):
         self._verify_sequence_valid(sequence=sequence, shape=(6,))
         self.__pose = np.array(sequence)
+        if gripper_position:
+            self.__gripper_position = gripper_position
 
     def set_xyz(self, sequence):
         self._verify_sequence_valid(sequence=sequence, shape=(3,))
@@ -415,8 +417,8 @@ class EndeffectorPose(Position):
 
     def inverse_kinematics_ikpy(
         self,
-        initial_joint_positions,  # excludes gripper, unlike current_actuator_positions which includes gripper
-        align_orientation=False,
+        orientation_mode,
+        initial_joint_positions=None,  # excludes gripper, unlike current_actuator_positions which includes gripper
     ):
         if initial_joint_positions is None:
             initial_position = None  # unknown initial_position
@@ -429,12 +431,18 @@ class EndeffectorPose(Position):
         ).as_matrix()
 
         # if align all, or only z or only pos
-        if align_orientation:
-            orientation_mode = "all"
-        else:
+        if orientation_mode == "all":
+            pass
+        elif orientation_mode == "Z":
             # to align with unit vector of z axis -- because gripper was pointing upwards at installation
             target_orientation = target_orientation[2]
             orientation_mode = "Z"
+        elif orientation_mode == "none" or orientation_mode is None:
+            target_orientation = None
+            orientation_mode = None
+        else:
+            raise Exception(f"Unexpected orientation_mode == {orientation_mode}")
+
         try:
             joint_positions = self.robot_chain.inverse_kinematics(
                 target_position=self.xyz,
@@ -443,23 +451,26 @@ class EndeffectorPose(Position):
                 orientation_mode=orientation_mode,
             )
         except Exception as e:
-            logging.warning(f"Skipped IK, exception: {e}")
+            logging.warning(f"Skipped IK for {orientation_mode}, exception: {e}")
             return None
-        # logging.info(self.robot_chain.forward_kinematics(joint_positions))
-        joint_positions = joint_positions[1:7] * 180.0 / np.pi
-        # logging.error(f"target_pose {target_pose} joint_positions {joint_positions}")
-        actuator_positions = np.append(
-            joint_positions, self.gripper_position
-        )  # [1:] to remove base_link and gripper link
+
+        joint_positions = (
+            joint_positions[1:7] * 180.0 / np.pi
+        )  # [1:7] to remove base_link and gripper link
+        actuator_positions = np.append(joint_positions, self.gripper_position)
         return actuator_positions
 
-    def validate_fk_ik(
+    def validate_ik_fk(
         self,
         new_joint_positions_sent_to_hardware: collections.abc.Sequence,
-        initial_joint_positions: collections.abc.Sequence = None,
-        tolerance=0.01,
+        tolerance={
+            "xyz_atol": 10,  # mm
+            "rpy_atol": 3,  # degrees
+        },
         use_ikpy=False,
     ):
+        if new_joint_positions_sent_to_hardware is None:
+            return False
         if use_ikpy:
             estimated_ee_pose_matrix_via_fk = self.robot_chain.forward_kinematics(
                 [
@@ -472,27 +483,27 @@ class EndeffectorPose(Position):
             rpy = Rotation.from_matrix(
                 estimated_ee_pose_matrix_via_fk[:3, :3]
             ).as_euler("XYZ", degrees=False)
-            pose = np.concatenate([xyz, rpy])
+            actual_pose_vector = np.concatenate([xyz, rpy])
         else:
             estimated_ee_pose = ActuatorPositions(
                 positions=new_joint_positions_sent_to_hardware
             ).forward_kinematics_math_based()
-            pose = estimated_ee_pose["endeffector_pose_intrinsic"]
-        joint_positions_solved_by_ik = EndeffectorPose(
-            pose=pose
-        ).inverse_kinematics_ikpy(initial_joint_positions=initial_joint_positions)
-        if joint_positions_solved_by_ik is not None and np.allclose(
-            new_joint_positions_sent_to_hardware,
-            joint_positions_solved_by_ik,
-            rtol=tolerance,  # 1% tolerance
-        ):
-            status = True
-        else:
-            status = False
+            actual_pose_vector = estimated_ee_pose["endeffector_pose_intrinsic"]
+
+        intended_pose_vector = self.pose
         return (
-            status,
-            new_joint_positions_sent_to_hardware,
-            joint_positions_solved_by_ik,
+            np.allclose(
+                a=intended_pose_vector[:3],
+                b=actual_pose_vector[:3],
+                rtol=tolerance["xyz_atol"],
+            )
+            and np.allclose(
+                a=intended_pose_vector[3:6],
+                b=actual_pose_vector[3:6],
+                rtol=tolerance["rpy_atol"],
+            ),
+            intended_pose_vector,
+            actual_pose_vector,
         )
 
     @staticmethod
@@ -668,9 +679,7 @@ class TrajectoryEndeffectorPose(Trajectory):
         current_positions = np.array(starting_positions.positions)
         for index in range(1, len(self.trajectory)):
             timestamp, new_pose = self.trajectory[index]
-            _, previous_pose = self.trajectory[index - 1]
             new_pose: EndeffectorPose
-            previous_pose: EndeffectorPose
             new_positions = new_pose.inverse_kinematics_ikpy(
                 initial_joint_positions=current_positions[:-1],
             )
