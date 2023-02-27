@@ -12,7 +12,6 @@ import logging
 import time
 
 import numpy as np
-
 from control import arm_controller, ps4_joystick, raspberry_pi
 from control.config_and_enums.arm_connection_config import arm_segments_config
 

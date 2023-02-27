@@ -11,7 +11,6 @@ import logging
 import os
 
 import numpy as np
-
 from control import arm_controller, motion
 
 

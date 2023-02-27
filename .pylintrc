@@ -1,5 +1,8 @@
 [MESSAGES CONTROL]
 disable=
+    wrong-import-order,
+    dangerous-default-value,
+    too-many-lines,
     too-many-locals,
     unused-argument,
     unnecessary-lambda,
