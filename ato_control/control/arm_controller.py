@@ -52,7 +52,7 @@ class ArmController(arm_controller_interface.ArmControllerInterface):
         ),  # angular velocity
         cartesian_velocities_deg_per_ms=tuple(i * 0.01 for i in range(1, 10)),
         initial_velocity_level=2,
-        home_position=(0, 60, 0, 80, 0, -50, 0),
+        home_position=(0, 40, 0, 60, 0, -35, 0),  # (0, 60, 0, 80, 0, -50, 0),
     ):
         self.home_position = home_position
         assert isinstance(pi_obj, raspberry_pi.RaspberryPi)
@@ -144,13 +144,6 @@ class ArmController(arm_controller_interface.ArmControllerInterface):
         self.__controller_start_time = datetime.now()
         self.ready = True
 
-        # initially pos = ik(fk(pose)) should be true
-        if not self.validate_fk_ik(
-            joint_positions_sent_to_hardware=self.__get_indexed_actuator_positions(),
-            estimated_ee_pose_via_fk=self.__get_endeffector_pose(),
-        )[0]:
-            logging.warning(f"Failed to validate_fk_ik: {self.validate_fk_ik()[1]}")
-
     @property
     def is_at_home_position(self):
         return np.allclose(
@@ -158,24 +151,6 @@ class ArmController(arm_controller_interface.ArmControllerInterface):
             self.__get_indexed_actuator_positions(),
             rtol=0.001,
         )  # 0.1% tolerance
-
-    def validate_fk_ik(
-        self, joint_positions_sent_to_hardware, estimated_ee_pose_via_fk
-    ):
-        joint_positions_solved_by_ik = (
-            self.__solve_best_inverse_kinematics(
-                target_pose=motion.EndeffectorPose(pose=estimated_ee_pose_via_fk)
-            ),
-        )
-        return (
-            np.allclose(
-                joint_positions_sent_to_hardware,
-                joint_positions_solved_by_ik,
-                rtol=0.01,  # 1% tolerance
-            ),
-            joint_positions_sent_to_hardware,
-            joint_positions_solved_by_ik,
-        )
 
     def get_joystick_input_states(self):
         return self.__joystick_input_states
@@ -346,25 +321,39 @@ class ArmController(arm_controller_interface.ArmControllerInterface):
         self.__move_servos_by_joint_space_delta(joint_positions_delta=positions_delta)
 
     def __move_intended_pose_by_cartesian_delta(self, cartesian_delta: Tuple[float]):
-        self.__intended_pose.apply_delta(
+        target_pose = copy.deepcopy(self.__intended_pose).apply_delta(
             pose_delta=cartesian_delta[:6], gripper_delta=cartesian_delta[-1]
         )
-        self.__move_servos_by_cartesian(target_pose=self.__intended_pose)
+        target_positions = self.__move_servos_by_cartesian(
+            target_pose=self.__intended_pose
+        )
+        if target_positions is not False:
+            self.__move_towards(target_positions=target_positions)
+        self.__intended_pose = target_pose
 
     def __move_servos_by_cartesian(self, target_pose: motion.EndeffectorPose):
-        target_positions = self.__solve_best_inverse_kinematics(target_pose=target_pose)
-        if target_positions is not None:
-            self.__move_towards(target_positions=target_positions)
-
-    def __solve_best_inverse_kinematics(self, target_pose: motion.EndeffectorPose):
-        assert isinstance(target_pose, motion.EndeffectorPose), target_pose
-        current_actuator_positions = (
-            self.__get_current_actuator_position_obj().positions[:-1]
-        )  # [:-1] to remove gripper
-        target_positions = target_pose.inverse_kinematics_math_based(
-            current_actuator_positions=current_actuator_positions,
+        original_joint_positions = self.__get_indexed_actuator_positions()
+        # todo: move orientation then fall back to pos only
+        target_positions = target_pose.inverse_kinematics_ikpy(
+            initial_joint_positions=self.__get_current_actuator_position_obj().positions[
+                :-1
+            ],
         )
-        return target_positions
+        if target_positions is not None:
+            validation_results = self.__intended_pose.validate_fk_ik(
+                new_joint_positions_sent_to_hardware=target_positions,
+                initial_joint_positions=original_joint_positions[:-1],
+            )
+            if validation_results[0] is True:
+                logging.debug(
+                    f"Validate_fk_ik: {validation_results[1]} == {validation_results[2]}"
+                )
+                return target_positions
+            else:
+                logging.warning(
+                    f"Failed to validate_fk_ik: {validation_results[1]} != {validation_results[2]}"
+                )
+                return False
 
     def move_to_installation_position(self):
         for servo in self._indexed_servo_objs:
@@ -645,8 +634,8 @@ class ArmController(arm_controller_interface.ArmControllerInterface):
             1: JoystickAxis.LEFT_VERTICAL,  # y
             2: (Button.CROSS, Button.TRIANGLE),  # z
             # gripper reference frame is intrinsic, and its initial frame is different from camera
-            3: JoystickAxis.RIGHT_HORIZONTAL,  # pitch
-            4: JoystickAxis.RIGHT_VERTICAL,  # yaw
+            3: JoystickAxis.RIGHT_VERTICAL,  # pitch
+            4: JoystickAxis.RIGHT_HORIZONTAL,  # yaw
             5: (Button.SQUARE, Button.CIRCLE),  # roll
             # 6: JoystickAxis.L2R2,  # gripper
         }
@@ -982,7 +971,9 @@ class ArmController(arm_controller_interface.ArmControllerInterface):
     def __get_index_by_servo_name(self, name):
         return self.__inverse_indexed_servo_names[name]
 
-    def __get_current_actuator_position_obj(self, refresh=False):
+    def __get_current_actuator_position_obj(
+        self, refresh=False
+    ) -> motion.ActuatorPositions:
         if refresh or self.__current_actuator_positions is None:
             positions = self.__get_indexed_actuator_positions()
             assert isinstance(positions[0], numbers.Number), type(positions[0])
@@ -996,10 +987,11 @@ class ArmController(arm_controller_interface.ArmControllerInterface):
             refresh or self.__current_actuator_position_forward_kinematics is None
         ):
             self.__current_actuator_position_forward_kinematics = (
-                self.__get_current_actuator_position_obj().forward_kinematics()
+                self.__get_current_actuator_position_obj().forward_kinematics_math_based()
             )
         return self.__current_actuator_position_forward_kinematics
 
+    #
     def __get_endeffector_pose(self):
         return self.__get_current_actuator_position_forward_kinematics()[
             "endeffector_pose_intrinsic"

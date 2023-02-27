@@ -97,7 +97,9 @@ class ActuatorPositions(Position):
 
     rotation_ranges = None
 
-    def __init__(self, positions) -> None:
+    def __init__(self, positions, gripper_position=None) -> None:
+        if gripper_position is not None:
+            positions = np.append(positions, gripper_position)
         self.set(sequence=positions)
 
     @classmethod
@@ -208,6 +210,9 @@ class ActuatorPositions(Position):
             else ""
         )
 
+    # we have 3 versions of forward_kinematics, to practice and learn, we implemented one version based on ml
+    # and another base on math.
+    # finally a feature rich implementation from the ikpy package
     def forward_kinematics_ml_based(self):
         actuator_positions = np.array(self.positions[:6], dtype=np.float32)
         features = ActuatorPositions.normalize_to_relu6(sequence=actuator_positions)
@@ -215,7 +220,7 @@ class ActuatorPositions(Position):
             features=features
         )
 
-    def forward_kinematics(self):
+    def forward_kinematics_math_based(self):
         assert (
             self.__class__.actuator_indices_mapping is not None
         ), self.__class__.actuator_indices_mapping
@@ -312,6 +317,9 @@ class ActuatorPositions(Position):
             "endeffector_reference_frame": np.array(endeffector_reference_frame),
         }
 
+    def forward_kinematics_ikpy(self):
+        return None
+
 
 class EndeffectorPose(Position):
     robot_chain = None
@@ -382,6 +390,7 @@ class EndeffectorPose(Position):
         ) * Rotation.from_euler("XYZ", self.rpy, degrees=True)
         self.__pose[3:6] = rot.as_euler("XYZ", degrees=True)
         self.__gripper_position += gripper_delta
+        return self
 
     def to_tuple(self):
         return tuple(val for val in np.append(self.__pose, self.__gripper_position))
@@ -404,12 +413,17 @@ class EndeffectorPose(Position):
             urdf_filename, active_links_mask=[False] + [True] * 6 + [False]
         )
 
-    def inverse_kinematics_math_based(
-        self, current_actuator_positions, align_orientation=False
+    def inverse_kinematics_ikpy(
+        self,
+        initial_joint_positions,  # excludes gripper, unlike current_actuator_positions which includes gripper
+        align_orientation=False,
     ):
-        initial_position = np.radians(
-            np.concatenate([[0], current_actuator_positions, [0]])
-        )
+        if initial_joint_positions is None:
+            initial_position = None  # unknown initial_position
+        else:
+            initial_position = np.radians(
+                np.concatenate([[0], initial_joint_positions, [0]])
+            )
         target_orientation = Rotation.from_euler(
             "XYZ", self.rpy, degrees=True
         ).as_matrix()
@@ -439,6 +453,48 @@ class EndeffectorPose(Position):
         )  # [1:] to remove base_link and gripper link
         return actuator_positions
 
+    def validate_fk_ik(
+        self,
+        new_joint_positions_sent_to_hardware: collections.abc.Sequence,
+        initial_joint_positions: collections.abc.Sequence = None,
+        tolerance=0.01,
+        use_ikpy=False,
+    ):
+        if use_ikpy:
+            estimated_ee_pose_matrix_via_fk = self.robot_chain.forward_kinematics(
+                [
+                    0,
+                    *np.radians(new_joint_positions_sent_to_hardware),
+                ]  # base_link + active_joints
+            )
+            logging.error(estimated_ee_pose_matrix_via_fk)
+            xyz = estimated_ee_pose_matrix_via_fk[:3, 3]
+            rpy = Rotation.from_matrix(
+                estimated_ee_pose_matrix_via_fk[:3, :3]
+            ).as_euler("XYZ", degrees=False)
+            pose = np.concatenate([xyz, rpy])
+        else:
+            estimated_ee_pose = ActuatorPositions(
+                positions=new_joint_positions_sent_to_hardware
+            ).forward_kinematics_math_based()
+            pose = estimated_ee_pose["endeffector_pose_intrinsic"]
+        joint_positions_solved_by_ik = EndeffectorPose(
+            pose=pose
+        ).inverse_kinematics_ikpy(initial_joint_positions=initial_joint_positions)
+        if joint_positions_solved_by_ik is not None and np.allclose(
+            new_joint_positions_sent_to_hardware,
+            joint_positions_solved_by_ik,
+            rtol=tolerance,  # 1% tolerance
+        ):
+            status = True
+        else:
+            status = False
+        return (
+            status,
+            new_joint_positions_sent_to_hardware,
+            joint_positions_solved_by_ik,
+        )
+
     @staticmethod
     # Credits to ChatGPT. When asked:
     # "use scipy, write code to transform a positional and orientational pose vector of shape (6,), which contains [x,y,z,roll,pitch,yaw], named input_pose, where roll pitch yaw are already in degrees, convert it into an affine matrix of (4,4) named affine_matrix"
@@ -460,17 +516,15 @@ class EndeffectorPose(Position):
 
         return affine_matrix
 
-    def inverse_kinematics_ml_based(self, current_actuator_positions, current_pose):
-        current_actuator_positions = np.array(
-            current_actuator_positions, dtype=np.float32
-        )
-        current_actuator_positions_features = ActuatorPositions.normalize_to_relu6(
-            sequence=current_actuator_positions
+    def inverse_kinematics_ml_based(self, initial_joint_positions, current_pose):
+        initial_joint_positions = np.array(initial_joint_positions, dtype=np.float32)
+        initial_joint_positions_features = ActuatorPositions.normalize_to_relu6(
+            sequence=initial_joint_positions
         )
         current_pose = np.array(current_pose, dtype=np.float32)
         target_pose = np.array(self.pose[:6], dtype=np.float32)
         features = np.concatenate(
-            [current_actuator_positions_features, current_pose, target_pose]
+            [initial_joint_positions_features, current_pose, target_pose]
         )
         inferenced_actuator_positions = (
             Singletons.get_inverse_kinematics_model().inference_one(features=features)
@@ -617,8 +671,8 @@ class TrajectoryEndeffectorPose(Trajectory):
             _, previous_pose = self.trajectory[index - 1]
             new_pose: EndeffectorPose
             previous_pose: EndeffectorPose
-            new_positions = new_pose.inverse_kinematics_math_based(
-                current_actuator_positions=current_positions[:-1],
+            new_positions = new_pose.inverse_kinematics_ikpy(
+                initial_joint_positions=current_positions[:-1],
             )
             if new_positions is None:
                 continue
