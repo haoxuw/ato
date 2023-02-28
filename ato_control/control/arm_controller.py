@@ -8,7 +8,6 @@
 # MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.
 # See more details in the LICENSE folder.
 
-import collections
 import copy
 import json
 import logging
@@ -44,12 +43,13 @@ class ArmController(arm_controller_interface.ArmControllerInterface):
         pi_obj: raspberry_pi.RaspberryPi,
         joystick_obj: ps4_joystick.Ps4Joystick,
         arm_segments_config: Dict[Tuple[int, str], ServoConnectionConfig],
-        frame_rate=10,
+        frame_rate=100,
+        frame_rate_for_solving_cartesian=10,
         auto_save_controller_states_to_file=True,
         actuator_velocities_deg_per_ms=tuple(
             i * 0.01 for i in range(1, 10)
         ),  # angular velocity
-        cartesian_velocities_deg_per_ms=tuple(i * 0.01 for i in range(1, 10)),
+        cartesian_velocities_mm_or_deg_per_ms=tuple(i * 0.1 for i in range(1, 10)),
         initial_velocity_level=2,
         home_position=(0, 40, 0, 60, 0, -35, 0),  # (0, 60, 0, 80, 0, -50, 0),
     ):
@@ -104,7 +104,10 @@ class ArmController(arm_controller_interface.ArmControllerInterface):
         self.frame_rate = frame_rate
         self.interval_ms = 1000 // frame_rate
 
-        self.auto_save_controller_states_to_file = auto_save_controller_states_to_file
+        self.__solve_cartesian_once_in_x_cycles = max(
+            frame_rate // frame_rate_for_solving_cartesian, 1
+        )
+        self.__auto_save_controller_states_to_file = auto_save_controller_states_to_file
 
         self.__controller_thread = None
         self.__to_stop_clock = False
@@ -112,7 +115,9 @@ class ArmController(arm_controller_interface.ArmControllerInterface):
 
         # velocity settings
         self.__actuator_velocities_deg_per_ms = actuator_velocities_deg_per_ms
-        self.__cartesian_velocities_deg_per_ms = cartesian_velocities_deg_per_ms
+        self.__cartesian_velocities_mm_or_deg_per_ms = (
+            cartesian_velocities_mm_or_deg_per_ms
+        )
         self.__velocity_level = initial_velocity_level
 
         # trajectory replay (joint space)
@@ -122,6 +127,8 @@ class ArmController(arm_controller_interface.ArmControllerInterface):
         # joint space control: tracks current position of actuators
         self.__current_actuator_positions = None
         self.__current_actuator_position_forward_kinematics = None
+
+        self.__moving_towards_positions_delta = None
 
         # cartesian space control, tracks:
         # where is the intended pose
@@ -141,6 +148,7 @@ class ArmController(arm_controller_interface.ArmControllerInterface):
         self.__update_intended_pose_to_current_pose()
 
         self.__controller_start_time = datetime.now()
+        self.__clock_counter = 0
         self.ready = True
 
     @property
@@ -306,31 +314,15 @@ class ArmController(arm_controller_interface.ArmControllerInterface):
             len(self.__actuator_velocities_deg_per_ms) - 1, self.__velocity_level
         )
 
-    # the difference between this and __move_servos_by_joint_space_delta is a velocity limit
-    def __move_towards(self, target_positions, show_info=False):
-        assert isinstance(
-            target_positions, (np.ndarray, np.generic, collections.abc.Sequence)
-        ), type(target_positions)
-
-        current_positions = np.array(self.__get_indexed_actuator_positions())
-        positions_delta = target_positions - current_positions
-        # todo cap positions_delta according to limit
-
-        # logging.warn(f"{target_positions} - {current_positions}, {positions_delta}")
-        self.__move_servos_by_joint_space_delta(joint_positions_delta=positions_delta)
-
-    def __move_intended_pose_by_cartesian_delta(self, cartesian_delta: Tuple[float]):
+    def __solve_valid_movements_from_cartesian_delta(
+        self, cartesian_delta: Tuple[float]
+    ):
+        if cartesian_delta is None:
+            return (None, None)
         target_pose = copy.deepcopy(self.__intended_pose).apply_delta(
             pose_delta=cartesian_delta[:6], gripper_delta=cartesian_delta[-1]
         )
-        valid_movements = self.__move_servos_by_cartesian(target_pose=target_pose)
-        if valid_movements is not None:
-            target_positions, actual_pose_vector = valid_movements
-            self.__move_towards(target_positions=target_positions)
-            self.__intended_pose.set(sequence=actual_pose_vector)
-            # .actual_pose_vector
 
-    def __move_servos_by_cartesian(self, target_pose: motion.EndeffectorPose):
         actuator_positions = self.__get_indexed_actuator_positions()
         initial_joint_positions = actuator_positions[:-1]  # remove gripper
 
@@ -352,13 +344,30 @@ class ArmController(arm_controller_interface.ArmControllerInterface):
                 logging.debug(
                     f"validate_ik_fk @{orientation_mode}: {intended_pose_vector} == {actual_pose_vector}"
                 )
-                return target_positions, actual_pose_vector
+                positions_delta = target_positions - np.array(
+                    self.__get_indexed_actuator_positions()
+                )
+                joint_velocity_limits = (
+                    np.array(
+                        [
+                            config.velocity_magnifier
+                            for config in self._indexed_servo_configs
+                        ]
+                    )
+                    * self.actuator_velocity
+                )
+                positions_over_limit_ratio = np.max(
+                    np.abs(positions_delta / joint_velocity_limits)
+                )
+                if positions_over_limit_ratio > 1:
+                    positions_delta /= positions_over_limit_ratio / 2
+                return (positions_delta, actual_pose_vector)
             else:
                 logging.debug(
                     f"Failed to validate_ik_fk @{orientation_mode}: {intended_pose_vector} != {actual_pose_vector}"
                 )
                 # continue
-        return None
+        return (None, None)
 
     def move_to_installation_position(self):
         for servo in self._indexed_servo_objs:
@@ -599,6 +608,7 @@ class ArmController(arm_controller_interface.ArmControllerInterface):
         )
 
     def __advance_clock(self, current_time, time_delta_ms):
+        self.__clock_counter += 1
         show_info = not self.__controller_states[
             ControllerStates.LOG_INFO_EACH_TENTHS_SECOND
         ]
@@ -618,10 +628,31 @@ class ArmController(arm_controller_interface.ArmControllerInterface):
         elif self.__controller_states[
             ControllerStates.IN_CARTESIAN_NOT_JOINT_SPACE_MODE
         ]:
-            self.__parse_movement_updates_in_cartesian_space(
-                time_delta_ms=time_delta_ms,
-            )
-            # self.__update_intended_pose_to_current_pose()
+            if self.__clock_counter % self.__solve_cartesian_once_in_x_cycles == 0:
+                cartesian_delta = self.__parse_movement_updates_in_cartesian_space(
+                    time_delta_ms=time_delta_ms,
+                )
+                (
+                    positions_delta,
+                    actual_pose_vector,
+                ) = self.__solve_valid_movements_from_cartesian_delta(
+                    cartesian_delta=cartesian_delta
+                )
+                self.__moving_towards_positions_delta = positions_delta
+
+            if (
+                self.__moving_towards_positions_delta is not None
+            ):  # may inherit value from pervious cycles
+                if (
+                    self.__move_servos_by_joint_space_delta(
+                        joint_positions_delta=self.__moving_towards_positions_delta
+                    )
+                    is not None
+                ):
+                    self.__update_intended_pose_to_current_pose()
+            else:
+                # no movement, don't update intended pose
+                pass
         else:
             self.__parse_movement_updates_in_joint_space(
                 time_delta_ms=time_delta_ms,
@@ -642,7 +673,7 @@ class ArmController(arm_controller_interface.ArmControllerInterface):
             3: JoystickAxis.RIGHT_VERTICAL,  # pitch
             4: JoystickAxis.RIGHT_HORIZONTAL,  # yaw
             5: (Button.SQUARE, Button.CIRCLE),  # roll
-            # 6: JoystickAxis.L2R2,  # gripper
+            6: JoystickAxis.L2R2,  # gripper
         }
         to_move = False
         cartesian_delta = [0] * 7
@@ -662,9 +693,9 @@ class ArmController(arm_controller_interface.ArmControllerInterface):
                 cartesian_delta[index] *= time_delta_ms
                 cartesian_delta[index] *= self.cartesian_velocity
         if to_move:
-            self.__move_intended_pose_by_cartesian_delta(
-                cartesian_delta=cartesian_delta
-            )
+            return cartesian_delta
+        else:
+            return None
 
     def __parse_movement_updates_in_joint_space(self, time_delta_ms, show_info):
         joint_positions_delta = [0] * len(self._indexed_servo_names)
@@ -681,12 +712,11 @@ class ArmController(arm_controller_interface.ArmControllerInterface):
                 if stick_offset_ratio is None:
                     continue  # no movements
 
-                position_delta = (
-                    stick_offset_ratio * time_delta_ms * self.actuator_velocity
+                position_delta = stick_offset_ratio * time_delta_ms
+                position_delta *= (
+                    self._indexed_servo_configs[index].velocity_magnifier
+                    * self.actuator_velocity
                 )
-                position_delta *= self._indexed_servo_configs[
-                    self.__get_index_by_servo_name(unique_name)
-                ].velocity_magnifier
                 joint_positions_delta[index] = position_delta
         return self.__move_servos_by_joint_space_delta(
             joint_positions_delta=joint_positions_delta, show_info=show_info
@@ -695,6 +725,8 @@ class ArmController(arm_controller_interface.ArmControllerInterface):
     def __move_servos_by_joint_space_delta(
         self, joint_positions_delta, show_info=False
     ):
+        if joint_positions_delta is None:
+            return None
         return [
             self.__move_servo_by_delta(
                 unique_name=unique_name,
@@ -809,7 +841,7 @@ class ArmController(arm_controller_interface.ArmControllerInterface):
                 )
                 self.__do_internal_updates_for_current_actuator_positions()
                 self.save_controller_states(
-                    dry_run=not self.auto_save_controller_states_to_file
+                    dry_run=not self.__auto_save_controller_states_to_file
                 )
                 last = current
             time.sleep(interval_ms / 1000)
@@ -838,7 +870,7 @@ class ArmController(arm_controller_interface.ArmControllerInterface):
     @property
     # mm per ms
     def cartesian_velocity(self):
-        return self.__cartesian_velocities_deg_per_ms[self.__velocity_level]
+        return self.__cartesian_velocities_mm_or_deg_per_ms[self.__velocity_level]
 
     @property
     def seg_ids(self):
