@@ -17,7 +17,7 @@ echo "Creating virtual environment, the initial run might take a while..."
 source ./scripts/setup_venv.sh > /dev/null
 echo "Virtual environment created successfuly"
 
-if [ "$EUID" -eq 0 ]
+if cat /proc/cpuinfo | grep Raspberry > /dev/null
   then 
   sudo pigpiod
   else
