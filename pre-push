@@ -1,0 +1,19 @@
+#!/bin/sh
+set -e
+
+if [ -f "./ato_control/scripts/lint.sh" ]
+then
+    ato_control/scripts/lint.sh
+fi
+
+if [ -f "./ato_mesh/scripts/lint.sh" ]
+then
+    ato_mesh/scripts/lint.sh
+fi
+
+if [ -f "./ato_learning/scripts/lint.sh" ]
+then
+    ato_learning/scripts/lint.sh
+fi
+
+echo 'All pre-push linters passed successfully'
