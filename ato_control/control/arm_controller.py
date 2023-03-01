@@ -49,9 +49,9 @@ class ArmController(arm_controller_interface.ArmControllerInterface):
         actuator_velocities_deg_per_ms=tuple(
             i * 0.01 for i in range(1, 10)
         ),  # angular velocity
-        cartesian_velocities_mm_or_deg_per_ms=tuple(i * 0.1 for i in range(1, 10)),
+        cartesian_velocities_mm__per_ms=tuple(i * 0.1 for i in range(1, 10)),
         initial_velocity_level=2,
-        home_position=(0, 40, 0, 60, 0, -35, 0),  # (0, 60, 0, 80, 0, -50, 0),
+        home_position=(0, 30, 0, 60, 0, 15, 0),  # (0, 60, 0, 80, 0, -50, 0),
     ):
         self.home_position = home_position
         assert isinstance(pi_obj, raspberry_pi.RaspberryPi)
@@ -115,9 +115,7 @@ class ArmController(arm_controller_interface.ArmControllerInterface):
 
         # velocity settings
         self.__actuator_velocities_deg_per_ms = actuator_velocities_deg_per_ms
-        self.__cartesian_velocities_mm_or_deg_per_ms = (
-            cartesian_velocities_mm_or_deg_per_ms
-        )
+        self.__cartesian_velocities_mm__per_ms = cartesian_velocities_mm__per_ms
         self.__velocity_level = initial_velocity_level
 
         # trajectory replay (joint space)
@@ -314,60 +312,63 @@ class ArmController(arm_controller_interface.ArmControllerInterface):
             len(self.__actuator_velocities_deg_per_ms) - 1, self.__velocity_level
         )
 
-    def __solve_valid_movements_from_cartesian_delta(
-        self, cartesian_delta: Tuple[float]
+    def __solve_valid_movements_from_target_pose(
+        self,
+        target_pose: motion.EndeffectorPose,
+        time_delta_ms: float,
+        skip_validation=True,
     ):
-        if cartesian_delta is None:
-            return (None, None)
-        target_pose = copy.deepcopy(self.__intended_pose).apply_delta(
-            pose_delta=cartesian_delta[:6], gripper_delta=cartesian_delta[-1]
-        )
 
         actuator_positions = self.__get_indexed_actuator_positions()
         initial_joint_positions = actuator_positions[:-1]  # remove gripper
 
+        target_positions = None
         for orientation_mode in ("Z", "none"):  # todo try "all" axes
             target_positions = target_pose.inverse_kinematics_ikpy(
+                # todo when all modes fail, remove initial_joint_positions, move to more flexible positions
                 initial_joint_positions=initial_joint_positions,
                 orientation_mode=orientation_mode,
             )
             if target_positions is None:
                 continue
-            (
-                validation_results,
-                intended_pose_vector,
-                actual_pose_vector,
-            ) = target_pose.validate_ik_fk(
+            if skip_validation:
+                actual_pose_vector = None
+                break
+            (validation_results, actual_pose_vector,) = target_pose.validate_ik_fk(
                 new_joint_positions_sent_to_hardware=target_positions
             )
             if validation_results is True:
-                logging.debug(
-                    f"validate_ik_fk @{orientation_mode}: {intended_pose_vector} == {actual_pose_vector}"
-                )
-                positions_delta = target_positions - np.array(
-                    self.__get_indexed_actuator_positions()
-                )
-                joint_velocity_limits = (
-                    np.array(
-                        [
-                            config.velocity_magnifier
-                            for config in self._indexed_servo_configs
-                        ]
-                    )
-                    * self.actuator_velocity
-                )
-                positions_over_limit_ratio = np.max(
-                    np.abs(positions_delta / joint_velocity_limits)
-                )
-                if positions_over_limit_ratio > 1:
-                    positions_delta /= positions_over_limit_ratio / 2
-                return (positions_delta, actual_pose_vector)
+                break
             else:
                 logging.debug(
-                    f"Failed to validate_ik_fk @{orientation_mode}: {intended_pose_vector} != {actual_pose_vector}"
+                    f"Failed to validate_ik_fk @{orientation_mode}: {target_pose.pose} != {actual_pose_vector}"
                 )
-                # continue
-        return (None, None)
+        if target_positions is None:
+            return (None, None)
+        else:
+            logging.debug(
+                f"validate_ik_fk @{orientation_mode}: {target_pose.pose} == {actual_pose_vector}"
+            )
+            positions_delta = target_positions - np.array(
+                self.__get_indexed_actuator_positions()
+            )
+            joint_velocity_limits = (
+                np.array(
+                    [
+                        config.velocity_magnifier
+                        for config in self._indexed_servo_configs
+                    ]
+                )
+                * self.actuator_velocity
+                * time_delta_ms
+            )
+            positions_over_limit_ratio = np.max(
+                np.abs(positions_delta / joint_velocity_limits)
+            )
+
+            if positions_over_limit_ratio > 1:
+                positions_delta /= positions_over_limit_ratio
+            return (positions_delta, actual_pose_vector)
 
     def move_to_installation_position(self):
         for servo in self._indexed_servo_objs:
@@ -602,9 +603,11 @@ class ArmController(arm_controller_interface.ArmControllerInterface):
             else:
                 logging.info(f"Stopped to play trajectory")
 
-    def __update_intended_pose_to_current_pose(self):
-        self.__intended_pose = motion.EndeffectorPose(
-            pose=self.__get_endeffector_pose()
+    def __update_intended_pose_to_current_pose(self, override_pose=None):
+        self.__intended_pose = (
+            motion.EndeffectorPose(pose=self.__get_endeffector_pose())
+            if override_pose is None
+            else override_pose
         )
 
     def __advance_clock(self, current_time, time_delta_ms):
@@ -628,17 +631,22 @@ class ArmController(arm_controller_interface.ArmControllerInterface):
         elif self.__controller_states[
             ControllerStates.IN_CARTESIAN_NOT_JOINT_SPACE_MODE
         ]:
+            # todo, when rpy was compermised, only set xyz in implied_current_pose_vector
+            implied_current_pose_vector = None
             if self.__clock_counter % self.__solve_cartesian_once_in_x_cycles == 0:
-                cartesian_delta = self.__parse_movement_updates_in_cartesian_space(
+                target_pose = self.__parse_movement_updates_in_cartesian_space(
                     time_delta_ms=time_delta_ms,
                 )
-                (
-                    positions_delta,
-                    actual_pose_vector,
-                ) = self.__solve_valid_movements_from_cartesian_delta(
-                    cartesian_delta=cartesian_delta
-                )
-                self.__moving_towards_positions_delta = positions_delta
+                if target_pose is None:
+                    self.__moving_towards_positions_delta = None
+                else:
+                    (
+                        positions_delta,
+                        implied_current_pose_vector,
+                    ) = self.__solve_valid_movements_from_target_pose(
+                        target_pose=target_pose, time_delta_ms=time_delta_ms
+                    )
+                    self.__moving_towards_positions_delta = positions_delta
 
             if (
                 self.__moving_towards_positions_delta is not None
@@ -649,7 +657,9 @@ class ArmController(arm_controller_interface.ArmControllerInterface):
                     )
                     is not None
                 ):
-                    self.__update_intended_pose_to_current_pose()
+                    self.__update_intended_pose_to_current_pose(
+                        override_pose=implied_current_pose_vector
+                    )
             else:
                 # no movement, don't update intended pose
                 pass
@@ -693,7 +703,9 @@ class ArmController(arm_controller_interface.ArmControllerInterface):
                 cartesian_delta[index] *= time_delta_ms
                 cartesian_delta[index] *= self.cartesian_velocity
         if to_move:
-            return cartesian_delta
+            return copy.deepcopy(self.__intended_pose).apply_delta(
+                pose_delta=cartesian_delta[:6], gripper_delta=cartesian_delta[-1]
+            )
         else:
             return None
 
@@ -870,7 +882,7 @@ class ArmController(arm_controller_interface.ArmControllerInterface):
     @property
     # mm per ms
     def cartesian_velocity(self):
-        return self.__cartesian_velocities_mm_or_deg_per_ms[self.__velocity_level]
+        return self.__cartesian_velocities_mm__per_ms[self.__velocity_level]
 
     @property
     def seg_ids(self):
@@ -891,7 +903,7 @@ class ArmController(arm_controller_interface.ArmControllerInterface):
 
     def visualize_joints(self):
         fig = plt.figure()
-        axes_limits = max(self._indexed_segment_lengths) * 1.5
+        axes_limits = max(self._indexed_segment_lengths) * 3
         ax = plt.axes(projection="3d")
         # camera frame and robot frame is different, for robot:
         # axis are determined by left hand rule, X = thumb, Y = middle, Z = ring
@@ -901,7 +913,7 @@ class ArmController(arm_controller_interface.ArmControllerInterface):
         ax.set_zlabel("Z")
         ax.set_xlim(-axes_limits, axes_limits)
         ax.set_ylim(axes_limits, -axes_limits)
-        ax.set_zlim(-axes_limits / 10, axes_limits * 2)
+        ax.set_zlim(-axes_limits / 10, axes_limits)
 
         plotted_segments = ax.plot([], [], [], marker="o", color="orange")
 

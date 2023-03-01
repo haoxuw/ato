@@ -2,6 +2,7 @@
 disable=
     wrong-import-order,
     dangerous-default-value,
+    no-else-break,
     too-many-lines,
     too-many-locals,
     unused-argument,

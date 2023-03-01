@@ -470,7 +470,7 @@ class EndeffectorPose(Position):
         use_ikpy=False,
     ):
         if new_joint_positions_sent_to_hardware is None:
-            return False
+            return False, None
         if use_ikpy:
             estimated_ee_pose_matrix_via_fk = self.robot_chain.forward_kinematics(
                 [
@@ -502,7 +502,6 @@ class EndeffectorPose(Position):
                 b=actual_pose_vector[3:6],
                 rtol=tolerance["rpy_atol"],
             ),
-            intended_pose_vector,
             actual_pose_vector,
         )
 
