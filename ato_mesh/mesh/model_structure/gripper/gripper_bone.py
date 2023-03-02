@@ -37,7 +37,6 @@ class GripperBone(bone_separable.BoneSeparable):
     def model_mesh(self, add_surface_give=False):
         gripper, gripper_rotation_space = self._gripper_()
         bone = self.__separable_bone_mesh__()
-        bone = bone.rotate((0, 0, 0), (0, 0, 1), 90)
         bone = bone.translate(
             (
                 0,
