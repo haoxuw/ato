@@ -242,8 +242,7 @@ def add_models(cq_meshes, args):
         ]
     if args.all or args.mount:
         cq_meshes += [
-            mount.MountPos(segment_configs=segment_configs),
-            mount.MountNeg(segment_configs=segment_configs),
+            mount.MountCombined(segment_configs=segment_configs),
         ]
     if args.all or args.abstract:
         cq_meshes += [
