@@ -77,8 +77,8 @@ class StructuralConfigsSi:
     BoltOffsetCoefficientX: float = 1.58  # less is outwards
     BoltOffsetCoefficientZ: float = 1.74  # less is outwards
 
-    SurfaceGive: float = 0.3
-    BaseSizeFactor: float = 50
+    SurfaceGive: float = 0.2
+    MountUnitSize: float = 90
 
     # Used as value to represent "far away coordinates", but not too far, so we can still visualize
     Far: float = 142
