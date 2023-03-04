@@ -13,10 +13,10 @@ import pathlib
 
 import cadquery as cq
 from mesh.configuration import segment_configuration
-from mesh.model_structure.gripper import gripper_decorative
+from mesh.model_structure.gripper import gripper_using_jaw
 
 
-class GripperDragon(gripper_decorative.GripperDecorative):
+class GripperDragon(gripper_using_jaw.GripperUsingJaw):
     def __init__(
         self,
         segment_configs: segment_configuration.SegmentConfigs,
