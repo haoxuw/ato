@@ -12,7 +12,7 @@ from mesh.configuration import segment_configuration
 from mesh.model_structure.gripper import gripper_bone
 
 
-class GripperPractical(gripper_bone.GripperBone):
+class GripperUsingCog(gripper_bone.GripperBone):
     def __init__(
         self,
         segment_configs: segment_configuration.SegmentConfigs,

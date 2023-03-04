@@ -19,7 +19,7 @@ black --version
 black . --check || { echo 'Linting failed, need to run $ black .'; exit -2; }
 
 isort --version
-isort . --check-only || { echo 'Linting failed, need to run $ isort mesh'; exit -3; }
+isort . --check-only || { echo "Linting failed, need to run $ isort `pwd`"; exit -3; }
 
 pylint --version
 pylint mesh --rcfile ../.pylintrc || { echo 'Linting failed.'; exit -4; }

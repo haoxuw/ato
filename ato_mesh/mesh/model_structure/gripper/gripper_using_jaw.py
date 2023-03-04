@@ -13,10 +13,11 @@ from abc import abstractmethod
 
 import cadquery as cq
 from mesh.configuration import segment_configuration
+from mesh.cq_lib import cq_mesh
 from mesh.model_structure.gripper import gripper_bone
 
 
-class GripperDecorative(gripper_bone.GripperBone):
+class GripperUsingJaw(gripper_bone.GripperBone):
     def __init__(
         self,
         segment_configs: segment_configuration.SegmentConfigs,
@@ -24,11 +25,20 @@ class GripperDecorative(gripper_bone.GripperBone):
     ):
         super().__init__(segment_configs=segment_configs, name=name)
 
+    def _relocate(self, mesh: cq_mesh.CqMesh):
+        offsets = (-19.5, 0, 0)
+        return (
+            mesh.rotate((0, 0, 0), (0, 0, 1), -90)
+            .rotate((0, 0, 0), (0, 1, 0), 90)
+            .translate(self._rotation_params_()[0])
+            .translate(offsets)
+        )
+
     @abstractmethod
     def _import_decoration_mesh_(self, **kwargs):
         pass
 
-    # tuable base on the decorative mesh
+    # tunable base on the mesh
     @abstractmethod
     def _rotation_params_(self):
         """
@@ -144,7 +154,7 @@ class GripperDecorative(gripper_bone.GripperBone):
             space = bottom_space.add(top_space)
         return space
 
-    # e.g. for the dragon head girrper:
+    # e.g. for the dragon head gripper:
     # make cuts at jawline so that the chin could rotate
     def __rotation_space__(self, gap_size=0.25):
         (
@@ -175,6 +185,7 @@ class GripperDecorative(gripper_bone.GripperBone):
         # consider refactor with cq.shell
         holder_hollow_space = holder_space.cut(holder_mesh)
 
+        # to carve rotation structures of the jaw
         carver_space = self.__rotation_carver_template__(
             rotation_radius=rotation_radius + gap_size,
             mouth_angle=mouth_angle,
@@ -227,3 +238,20 @@ class GripperDecorative(gripper_bone.GripperBone):
         rotation_space = self.__rotation_space__()
         decoration_mesh = self._import_decoration_mesh_()
         return decoration_mesh, rotation_space
+
+    def printable_mesh(self, face_upwards=True):
+        mesh = self.model_mesh(add_surface_give=True)
+        # affine transform to print up straight, for easier removal of supporting materials
+        mesh = mesh.translate(
+            (
+                0,
+                self.segment_configs.structural.RollBoneMeshNetLength
+                - self._bone_cut_length_(),
+                0,
+            )
+        )
+        if face_upwards:
+            mesh = mesh.rotate((0, 0, 0), (1, 0, 0), 90)
+        else:
+            mesh = mesh.rotate((0, 0, 0), (0, 1, 0), 90)
+        return mesh

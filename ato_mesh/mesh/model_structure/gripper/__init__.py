@@ -8,4 +8,10 @@
 # MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.
 # See more details in the LICENSE folder.
 
-from . import gripper_bone, gripper_decorative, gripper_dragon, gripper_practical
+from . import (
+    gripper_bone,
+    gripper_dragon,
+    gripper_dragon_with_servo,
+    gripper_using_cog,
+    gripper_using_jaw,
+)
