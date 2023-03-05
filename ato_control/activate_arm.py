@@ -12,7 +12,7 @@ import argparse
 import time
 
 from control import (
-    arm_controller,
+    arm_controller_joystick,
     arm_controller_ml_training,
     ps4_joystick,
     raspberry_pi,
@@ -51,7 +51,7 @@ def get_args():
     parser.add_argument(
         "--frame_rate",
         type=int,
-        default=10,
+        default=500,
     )
     parser.add_argument(
         "--training_data_filepath_prefix",
@@ -73,7 +73,7 @@ def create_arm_controller_obj(args, for_training=False):
             arm_segments_config=arm_segments_config,
         )
     else:
-        arm_ctl = arm_controller.ArmController(
+        arm_ctl = arm_controller_joystick.ArmControllerJoystick(
             frame_rate=args.frame_rate,
             pi_obj=pi,
             joystick_obj=joystick,

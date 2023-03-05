@@ -27,17 +27,13 @@ from control.config_and_enums.arm_connection_config import (
     SegmentConfigTypes,
     ServoConnectionConfig,
 )
-from control.config_and_enums.joystick_input_types import (
-    Button,
-    ControllerStates,
-    JoystickAxis,
-)
-from control.interface_classes import arm_controller_interface, servo_interface
+from control.config_and_enums.joystick_input_types import ControllerStates
+from control.interface_classes import servo_interface
 from matplotlib.animation import FuncAnimation
 from scipy.spatial.transform import Rotation
 
 
-class ArmController(arm_controller_interface.ArmControllerInterface):
+class ArmController:
     def __init__(
         self,
         pi_obj: raspberry_pi.RaspberryPi,
@@ -53,6 +49,7 @@ class ArmController(arm_controller_interface.ArmControllerInterface):
         initial_velocity_level=2,
         home_position=(0, 30, 0, 60, 0, 15, 0),  # (0, 60, 0, 80, 0, -50, 0),
     ):
+        self._input_states = None
         self.home_position = home_position
         assert isinstance(pi_obj, raspberry_pi.RaspberryPi)
         self.__pi_obj = pi_obj
@@ -130,7 +127,7 @@ class ArmController(arm_controller_interface.ArmControllerInterface):
 
         # cartesian space control, tracks:
         # where is the intended pose
-        self.__intended_pose: motion.EndeffectorPose = None
+        self._intended_pose: motion.EndeffectorPose = None
         # where is the (realistic) attempted pose (best effort towards the intended pose, because not all pose are reachable)
         # self.__attempted_pose: motion.EndeffectorPose = None
         # where is the attempted joint positions == IK(attempted pose)
@@ -138,7 +135,7 @@ class ArmController(arm_controller_interface.ArmControllerInterface):
         # where is the current joint positions, max velocity may not keep up achieving the attempted
         # is self.__current_actuator_positions
 
-        self.reset_joystick_input_states()
+        self.reset_input_states()
         self.reset_controller_flags()
         self.__reset_trajectory()
 
@@ -157,29 +154,8 @@ class ArmController(arm_controller_interface.ArmControllerInterface):
             rtol=0.001,
         )  # 0.1% tolerance
 
-    def get_joystick_input_states(self):
-        return self.__joystick_input_states
-
-    def reset_joystick_input_states(self):
-        self.__joystick_input_states = {
-            JoystickAxis.LEFT_HORIZONTAL: None,  # along X axis, i.e. shift towards left/right
-            JoystickAxis.LEFT_VERTICAL: None,  # along Y axis, i.e. shift backward/forward
-            JoystickAxis.RIGHT_HORIZONTAL: None,  # intrinsic yaw
-            JoystickAxis.RIGHT_VERTICAL: None,  # intrinsic pitch
-            JoystickAxis.L2R2: None,  # gripper close/open
-            Button.CROSS: False,  # along Z axis, i.e. descend
-            Button.SQUARE: False,  # rotate counterclockwise
-            Button.TRIANGLE: False,  # along Z axis, i.e. ascend
-            Button.CIRCLE: False,  # rotate clockwise
-            Button.DOWN: False,  # settings mode (while holding)
-            Button.LEFT: False,
-            Button.UP: False,
-            Button.RIGHT: False,
-            Button.L1: False,  # backwards along endeffector orientation
-            Button.R1: False,  # forwards along endeffector orientation
-            Button.L3: False,  # start recording trajectory, save trajectory
-            Button.R3: False,  # replay trajectory
-        }
+    def get_input_states(self):
+        return self._input_states
 
     def get_controller_states(self):
         return self.__controller_states
@@ -312,6 +288,8 @@ class ArmController(arm_controller_interface.ArmControllerInterface):
             len(self.__actuator_velocities_deg_per_ms) - 1, self.__velocity_level
         )
 
+    solver_perf_stats = {"count": 0, "avg_time_ms": None}
+
     def __solve_valid_movements_from_target_pose(
         self,
         target_pose: motion.EndeffectorPose,
@@ -319,6 +297,7 @@ class ArmController(arm_controller_interface.ArmControllerInterface):
         skip_validation=True,
     ):
 
+        start_time = datetime.now()
         actuator_positions = self.__get_indexed_actuator_positions()
         initial_joint_positions = actuator_positions[:-1]  # remove gripper
 
@@ -344,7 +323,7 @@ class ArmController(arm_controller_interface.ArmControllerInterface):
                     f"Failed to validate_ik_fk @{orientation_mode}: {target_pose.pose} != {actual_pose_vector}"
                 )
         if target_positions is None:
-            return (None, None)
+            positions_delta, actual_pose_vector = (None, None)
         else:
             logging.debug(
                 f"validate_ik_fk @{orientation_mode}: {target_pose.pose} == {actual_pose_vector}"
@@ -362,13 +341,25 @@ class ArmController(arm_controller_interface.ArmControllerInterface):
                 * self.actuator_velocity
                 * time_delta_ms
             )
-            positions_over_limit_ratio = np.max(
+            positions_normalization_ratio = np.max(
                 np.abs(positions_delta / joint_velocity_limits)
             )
 
-            if positions_over_limit_ratio > 1:
-                positions_delta /= positions_over_limit_ratio
-            return (positions_delta, actual_pose_vector)
+            if positions_normalization_ratio > 1:
+                positions_delta /= positions_normalization_ratio
+
+        # update perf stats
+        ik_solving_time = (datetime.now() - start_time).total_seconds() * 1000.0
+        if self.solver_perf_stats["avg_time_ms"] is None:
+            self.solver_perf_stats["avg_time_ms"] = ik_solving_time
+        else:
+            self.solver_perf_stats["avg_time_ms"] = (
+                self.solver_perf_stats["avg_time_ms"] * self.solver_perf_stats["count"]
+                + ik_solving_time
+            ) / (self.solver_perf_stats["count"] + 1)
+        self.solver_perf_stats["count"] += 1
+        logging.info(self.solver_perf_stats)
+        return (positions_delta, actual_pose_vector)
 
     def move_to_installation_position(self):
         for servo in self._indexed_servo_objs:
@@ -604,7 +595,7 @@ class ArmController(arm_controller_interface.ArmControllerInterface):
                 logging.info(f"Stopped to play trajectory")
 
     def __update_intended_pose_to_current_pose(self, override_pose=None):
-        self.__intended_pose = (
+        self._intended_pose = (
             motion.EndeffectorPose(pose=self.__get_endeffector_pose())
             if override_pose is None
             else override_pose
@@ -634,7 +625,7 @@ class ArmController(arm_controller_interface.ArmControllerInterface):
             # todo, when rpy was compromised, only set xyz in implied_current_pose_vector
             implied_current_pose_vector = None
             if self.__clock_counter % self.__solve_cartesian_once_in_x_cycles == 0:
-                target_pose = self.__parse_movement_updates_in_cartesian_space(
+                target_pose = self._parse_movement_updates_in_cartesian_space(
                     time_delta_ms=time_delta_ms,
                 )
                 if target_pose is None:
@@ -664,75 +655,11 @@ class ArmController(arm_controller_interface.ArmControllerInterface):
                 # no movement, don't update intended pose
                 pass
         else:
-            self.__parse_movement_updates_in_joint_space(
+            self._parse_movement_updates_in_joint_space(
                 time_delta_ms=time_delta_ms,
                 show_info=show_info,
             )
             self.__update_intended_pose_to_current_pose()
-
-    def __parse_movement_updates_in_cartesian_space(self, time_delta_ms):
-        # cartesian_movements = self.__parse_movements_xyz() + self.__parse_movements_rpy()
-        # actuator_positions_delta = motion.EndeffectorPose(cartesian_movements).inverse_kinematics()
-
-        # mapping defined according to reset_joystick_input_states()
-        mapping = {
-            0: JoystickAxis.LEFT_HORIZONTAL,  # x
-            1: JoystickAxis.LEFT_VERTICAL,  # y
-            2: (Button.CROSS, Button.TRIANGLE),  # z
-            # gripper reference frame is intrinsic, and its initial frame is different from camera
-            3: JoystickAxis.RIGHT_VERTICAL,  # pitch
-            4: JoystickAxis.RIGHT_HORIZONTAL,  # yaw
-            5: (Button.SQUARE, Button.CIRCLE),  # roll
-            6: JoystickAxis.L2R2,  # gripper
-        }
-        to_move = False
-        cartesian_delta = [0] * 7
-        for index, designated_axis in mapping.items():
-            if isinstance(designated_axis, tuple):
-                offset_ratio = 0
-                if self.__joystick_input_states[designated_axis[0]]:
-                    offset_ratio -= 1
-                if self.__joystick_input_states[designated_axis[1]]:
-                    offset_ratio += 1
-                # e.g. CROSS+TRIANGLE would cancel out
-            else:
-                offset_ratio = self.__joystick_input_states[designated_axis] or 0
-            if offset_ratio != 0:
-                to_move = True
-                cartesian_delta[index] = offset_ratio
-                cartesian_delta[index] *= time_delta_ms
-                cartesian_delta[index] *= self.cartesian_velocity
-        if to_move:
-            return copy.deepcopy(self.__intended_pose).apply_delta(
-                pose_delta=cartesian_delta[:6], gripper_delta=cartesian_delta[-1]
-            )
-        else:
-            return None
-
-    def __parse_movement_updates_in_joint_space(self, time_delta_ms, show_info):
-        joint_positions_delta = [0] * len(self._indexed_servo_names)
-        # each joint is controlled by some designated_axis on the joystick
-        for index, unique_name in enumerate(self._indexed_servo_names):
-            segment_id, enabler_axis = self.deserialize_unique_name(
-                unique_name=unique_name
-            )
-            designated_axis = self.__locate_designated_axis(
-                segment_id=segment_id, enabler_axis=enabler_axis
-            )
-            if designated_axis is not None:
-                stick_offset_ratio = self.__joystick_input_states[designated_axis]
-                if stick_offset_ratio is None:
-                    continue  # no movements
-
-                position_delta = stick_offset_ratio * time_delta_ms
-                position_delta *= (
-                    self._indexed_servo_configs[index].velocity_magnifier
-                    * self.actuator_velocity
-                )
-                joint_positions_delta[index] = position_delta
-        return self.__move_servos_by_joint_space_delta(
-            joint_positions_delta=joint_positions_delta, show_info=show_info
-        )
 
     def __move_servos_by_joint_space_delta(
         self, joint_positions_delta, show_info=False
@@ -759,28 +686,6 @@ class ArmController(arm_controller_interface.ArmControllerInterface):
             )
             for unique_name, position in zip(self._indexed_servo_names, joint_positions)
         ]
-
-    def __locate_designated_axis(self, segment_id: int, enabler_axis: ActuatorPurpose):
-        if enabler_axis == ActuatorPurpose.GRIPPER:
-            # L2R2 is a special case
-            return JoystickAxis.L2R2
-        else:
-            # if not L2 or R2, then it could be controlled by the two joysticks
-            if segment_id not in self.activated_segment_ids:
-                # the segment is not actively controlled
-                return None
-
-            if segment_id == self.activated_segment_ids[0]:
-                mapping = {
-                    ActuatorPurpose.ROLL: JoystickAxis.LEFT_HORIZONTAL,
-                    ActuatorPurpose.PITCH: JoystickAxis.LEFT_VERTICAL,
-                }
-            else:  # segment_id == self.activated_segment_ids[1]:
-                mapping = {
-                    ActuatorPurpose.ROLL: JoystickAxis.RIGHT_HORIZONTAL,
-                    ActuatorPurpose.PITCH: JoystickAxis.RIGHT_VERTICAL,
-                }
-            return mapping[enabler_axis]
 
     def __move_servo_by_delta(
         self, unique_name: str, position_delta: float, show_info: bool
@@ -966,9 +871,9 @@ class ArmController(arm_controller_interface.ArmControllerInterface):
                 uvw=kinematics["endeffector_reference_frame"][:],
                 length=self.__gripper_length,
             )
-            if self.__intended_pose is not None:
+            if self._intended_pose is not None:
                 global_frame = np.array([[1, 0, 0], [0, 1, 0], [0, 0, 1]])
-                rpy = self.__intended_pose.rpy
+                rpy = self._intended_pose.rpy
                 uvw = np.array(
                     [
                         Rotation.from_euler(
@@ -980,7 +885,7 @@ class ArmController(arm_controller_interface.ArmControllerInterface):
                     ]
                 )
                 plotted_elements["intended_pose"] = draw_3_axes(
-                    xyz=np.array([self.__intended_pose.xyz]),
+                    xyz=np.array([self._intended_pose.xyz]),
                     uvw=np.array([uvw]),
                     length=self.__gripper_length,
                     color=["orange", "cyan", "purple"],

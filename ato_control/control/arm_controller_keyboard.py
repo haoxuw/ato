@@ -8,16 +8,8 @@
 # MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.
 # See more details in the LICENSE folder.
 
-from . import (
-    arm_controller,
-    arm_controller_joystick,
-    arm_controller_keyboard,
-    arm_controller_ml_training,
-    config_and_enums,
-    interface_classes,
-    motion,
-    ps4_joystick,
-    raspberry_pi,
-    servo_ds3218,
-    servo_ds5160,
-)
+from control import arm_controller
+
+
+class ArmControllerKeyboard(arm_controller.ArmController):
+    pass

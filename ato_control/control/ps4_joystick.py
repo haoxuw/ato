@@ -11,7 +11,7 @@
 import logging
 import threading
 
-import control.arm_controller
+import control
 from control.config_and_enums.joystick_input_types import (
     Button,
     ControllerStates,
@@ -47,7 +47,9 @@ class Ps4Joystick(Controller, input_device_interface.InputDeviceInterface):
         }
         Controller.__init__(self, interface=interface, connecting_using_ds4drv=False)
         self.axis_max_value = 32767.0
-        self.__arm_controller_obj: control.control.arm_controller.ArmController = None
+        self.__arm_controller_obj: control.arm_controller_joystick.ArmControllerJoystick = (
+            None
+        )
         self.__thread = None
 
     # to handle new button release inputs (on opposed to persistent button holding)
@@ -64,7 +66,7 @@ class Ps4Joystick(Controller, input_device_interface.InputDeviceInterface):
 
     @property
     def input_states(self):
-        return self.__arm_controller_obj.get_joystick_input_states()
+        return self.__arm_controller_obj.get_input_states()
 
     @property
     def controller_states(self):
@@ -78,7 +80,7 @@ class Ps4Joystick(Controller, input_device_interface.InputDeviceInterface):
         )
 
     def start_thread(self):
-        self.__thread = threading.Thread(target=self.listen, args={})
+        self.__thread = threading.Thread(target=self.listen, kwargs={"timeout": 600})
         self.__thread.start()
         logging.info(f"Thread for Joystick Listener started.")
 
@@ -356,7 +358,7 @@ class Ps4Joystick(Controller, input_device_interface.InputDeviceInterface):
             self.controller_states[
                 ControllerStates.IN_CARTESIAN_NOT_JOINT_SPACE_MODE
             ] ^= True
-            self.arm_controller_obj.reset_joystick_input_states()
+            self.arm_controller_obj.reset_input_states()
         else:
             self.controller_states[ControllerStates.LOG_INFO_EACH_TENTHS_SECOND] ^= True
         logging.debug("on_share_release")
