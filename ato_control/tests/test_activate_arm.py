@@ -12,7 +12,7 @@ import logging
 import time
 
 import numpy as np
-from control import arm_controller, ps4_joystick, raspberry_pi
+from control import arm_controller_joystick, ps4_joystick, raspberry_pi
 from control.config_and_enums.arm_connection_config import arm_segments_config
 
 
@@ -20,19 +20,20 @@ def test_component_obj_creation():
     pi = raspberry_pi.RaspberryPi()
     joystick = ps4_joystick.Ps4Joystick(interface=f"/dev/input/js0")
 
-    arm_ctl = arm_controller.ArmController(
+    arm_ctl = arm_controller_joystick.ArmControllerJoystick(
         frame_rate=20,
         pi_obj=pi,
         joystick_obj=joystick,
         arm_segments_config=arm_segments_config,
     )
+    assert arm_ctl.ready is True
 
 
 def test_move_L3():
     pi = raspberry_pi.RaspberryPi()
     joystick = ps4_joystick.Ps4Joystick(interface=f"/dev/input/js0")
 
-    arm_ctl = arm_controller.ArmController(
+    arm_ctl = arm_controller_joystick.ArmControllerJoystick(
         frame_rate=20,
         pi_obj=pi,
         joystick_obj=joystick,
