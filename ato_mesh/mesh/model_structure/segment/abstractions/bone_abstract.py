@@ -53,15 +53,30 @@ class BonePitchAbstract(cq_mesh.CqMesh):
             + self.segment_configs.structural.SurfaceGive
         )
         bone_pitch_space = (
-            cq.Workplane(self.workplane_primary)
-            .box(
-                pitch_wheel_space_radius * 2,
-                self.segment_configs.structural.Far,
-                pitch_wheel_space_radius * 2
-                + self.segment_configs.structural.PitchBoneMeshNetLength,
+            cq.Workplane(self.workplane_secondary)
+            .polyline(
+                [
+                    (0, pitch_wheel_space_radius),
+                    (
+                        self.segment_configs.structural.BoneLength,
+                        self.segment_configs.structural.BoneLength
+                        + pitch_wheel_space_radius,
+                    ),
+                    (
+                        self.segment_configs.structural.BoneLength,
+                        -self.segment_configs.structural.BoneLength,
+                    ),
+                    (0, -self.segment_configs.structural.BoneLength),
+                ]
             )
+            .mirrorY()
+            .extrude(pitch_wheel_space_radius * 2)
             .translate(
-                (0, 0, -self.segment_configs.structural.PitchBoneMeshNetLength / 2)
+                (
+                    -pitch_wheel_space_radius,
+                    0,
+                    0,
+                )
             )
         )
         pitch_offset = (0, 0, self.segment_configs.structural.PitchCenterLocationZ)
@@ -173,7 +188,12 @@ class BoneAbstract(cq_mesh.CqMesh):
         return bone_whole
 
     def _get_roll_pitch_z_distance(self):
-        return self.segment_configs.structural.SegmentLength
+        return (
+            self.segment_configs.structural.BoneLength
+            + self.segment_configs.structural.JointRadius * 2
+            + self.segment_configs.structural.MotorTopLocation
+            - self.segment_configs.structural.PitchCenterLocationZ
+        )
 
     def __add_complementary(self, roll, pitch):
         offset_z = self._get_roll_pitch_z_distance()

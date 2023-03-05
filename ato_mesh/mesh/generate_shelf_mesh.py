@@ -47,6 +47,11 @@ def get_args():
         help="If only print the abstract objects, this would remove functional components such as bolt sockets, motor holder etc.",
     )
     parser.add_argument(
+        "--pitch_range_180",
+        action="store_true",
+        help="If generate joints with pitch ranges of 0~180 or 0~270",
+    )
+    parser.add_argument(
         "--joint_polygon_sides",
         type=int,
         default=-1,
@@ -117,8 +122,8 @@ def get_args():
     parser.add_argument(
         "--bone_length",
         type=int,
-        default=67,
-        help="Defaults bone length to 67, which is to be combined with joint radius == 33. We do not recommend to change the latter, which was defined to work with motor geometry.",
+        default=57,
+        help="Defaults bone length.",
     )
     parser.add_argument(
         "--export", action="store_true", help="If export printable models on shelf"
@@ -158,6 +163,7 @@ def add_models(cq_meshes, args):
         bone_length=args.bone_length,
         actuator_type=actuator_type,
         joint_polygon_sides=args.joint_polygon_sides,
+        pitch_range_180=args.pitch_range_180,
         nozzle_diameter=args.nozzle_diameter,
         roll_bone_holder_type=segment_configuration.RollBoneHolderType.CYLINDER
         if args.cylinder

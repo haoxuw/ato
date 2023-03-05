@@ -59,11 +59,13 @@ class ServoConnectionConfig:
         ) = connection_def
 
 
+# use (-85, 85) instead of (0, 180) on rotation_range to prevent damages from overshooting rotation
+
+# this object defines the particular arm config that I happen to be using now
 # Copied from the StructuralConfigsSi's configuration
 SegmentLength = 210
 GripperLength = 147
-
-# use (-85, 85) instead of (0, 180) to prevent damages from overshooting rotation
+# servo_max_position should be configured according to which flavor of the arm was assembled
 arm_segments_config = {
     0: {
         SegmentConfigTypes.PHYSICAL_LENGTH: SegmentLength,

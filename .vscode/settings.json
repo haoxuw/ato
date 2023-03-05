@@ -5,7 +5,7 @@
     "python.linting.pylintArgs": [
         "--max-line-length=200",
         "--disable=W1203,W1309,C0115,C0114,C0116",
-        "--disable=broad-exception-raised,unused-argument,unnecessary-lambda-assignment,arguments-differ,dangerous-default-value,unnecessary-lambda,consider-using-f-string,broad-except,assignment-from-none,no-member,unused-import,redefined-outer-name,import-error,attribute-defined-outside-init"
+        "--disable=useless-parent-delegation,broad-exception-raised,unused-argument,unnecessary-lambda-assignment,arguments-differ,dangerous-default-value,unnecessary-lambda,consider-using-f-string,broad-except,assignment-from-none,no-member,unused-import,redefined-outer-name,import-error,attribute-defined-outside-init"
     ],
     "python.analysis.diagnosticSeverityOverrides": {
         "reportMissingImports": "none"
