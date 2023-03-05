@@ -32,7 +32,7 @@ class ArmConfigsBase:
         return [
             SegmentConfigs(
                 bone_length=self.BoneLengths[index],
-                pitch_angle=self.PitchAngles[index],
+                allocate_with_pitch_angle=self.PitchAngles[index],
                 actuator_type=self.MotorTypes[index],
                 joint_polygon_sides=self.JointPolygonSides[index],
             )

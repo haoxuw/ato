@@ -631,7 +631,7 @@ class ArmController(arm_controller_interface.ArmControllerInterface):
         elif self.__controller_states[
             ControllerStates.IN_CARTESIAN_NOT_JOINT_SPACE_MODE
         ]:
-            # todo, when rpy was compermised, only set xyz in implied_current_pose_vector
+            # todo, when rpy was compromised, only set xyz in implied_current_pose_vector
             implied_current_pose_vector = None
             if self.__clock_counter % self.__solve_cartesian_once_in_x_cycles == 0:
                 target_pose = self.__parse_movement_updates_in_cartesian_space(

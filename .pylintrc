@@ -1,5 +1,6 @@
 [MESSAGES CONTROL]
 disable=
+    useless-parent-delegation,
     wrong-import-order,
     dangerous-default-value,
     no-else-break,

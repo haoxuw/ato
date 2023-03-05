@@ -73,10 +73,14 @@ class Arm(cq_mesh.CqMesh):
         arm = cq.Workplane(self.workplane_primary)
         for index, segment_configs in enumerate(reversed(self.segments_configs)):
             if index != 0:
-                arm = arm.rotate((0, 0, 0), (1, 0, 0), segment_configs.pitch_angle)
+                arm = arm.rotate(
+                    (0, 0, 0), (1, 0, 0), segment_configs.allocate_with_pitch_angle
+                )
             segment = self.__segment_mesh(
                 segment_configs=segment_configs,
-                allocate_pitch=segment_configs.pitch_angle if index == 0 else None,
+                allocate_pitch=segment_configs.allocate_with_pitch_angle
+                if index == 0
+                else None,
             )
             arm = arm.add(segment)
             arm = arm.translate((0, 0, segment_configs.structural.SegmentLength))

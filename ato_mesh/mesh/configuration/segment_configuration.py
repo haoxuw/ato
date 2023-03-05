@@ -33,29 +33,42 @@ class RollBoneHolderType:
 
 
 # since this project is named ATO(mic), let's name the first build (Silicon)
+# The Si180 version supports 180 degree pitch range, the 270 version supports 270 degrees, while requiring a longer joint
 @dataclass
-class StructuralConfigsSi:
+class StructuralConfigsSi180:
     # to understand the what those variables represent, please refer to
     # https://github.com/haoxuw/ato/blob/master-resources/images/illustrations/segment_config_diagram.png
     # length units are in mm:
 
+    ##########################################
     ## values derived, to be assigned in __init__
     BoneLength: float
     PitchBoneMeshNetLength: float
     RollBoneMeshNetLength: float
     SegmentLength: float
+    ##########################################
 
+    ##########################################
     ## values hard-coded to best fit the Ds5160 Servo and its HornDisk geometry:
     JointRadius: float = 33
     BoneRadius: float = 16.5
 
+    # Used as value to represent "far away coordinates", but not too far, so we can still visualize
+    Far: float = 142
+    VeryFar: float = Far * 10
+    ##########################################
+
+    ##########################################
     ## values that are configurable:
     JointLength: float = 110
+    PitchRange: float = 180
+    MotorTopLocation: float = 85
 
     PitchMotorOffsetX: float = 25  # larger is outwards
     PitchCenterLocationZ: float = (
         0  # 0: pitch axis is aligned with joint sphere's center, z: move inwards z mm
     )
+    ##########################################
 
     BoneHolderRadius: float = BoneRadius * 1.4
 
@@ -80,13 +93,9 @@ class StructuralConfigsSi:
     SurfaceGive: float = 0.2
     MountUnitSize: float = 90
 
-    # Used as value to represent "far away coordinates", but not too far, so we can still visualize
-    Far: float = 142
-    VeryFar: float = Far * 10
-
+    ##########################################
     ## values that are derived
 
-    MotorTopLocation: float = JointLength - JointRadius
     JointSphereHolders = [
         (
             (
@@ -142,6 +151,24 @@ class StructuralConfigsSi:
             self.PitchBoneMeshNetLength + self.RollBoneMeshNetLength
             == self.BoneLength + self.JointRadius * 2
         )
+        self._minimal_dimension_requirements()
+
+    def _minimal_dimension_requirements(self):
+        assert (
+            self.JointLength >= 110
+        ), "Joint length too short will results in insufficient space to house the DS1560 servo motors"
+
+
+# The 270 version requires a longer joint length than 180 to house pitch space
+@dataclass
+class StructuralConfigsSi270(StructuralConfigsSi180):
+    def __init__(
+        self, bone_length: float, roll_bone_holder_type: RollBoneHolderType
+    ) -> None:
+        super().__init__(bone_length, roll_bone_holder_type)
+
+    JointLength: float = 120
+    PitchRange: float = 270
 
 
 @dataclass
@@ -209,16 +236,15 @@ class HornDiskConfigsDs5160(HornConfigsBase):
     HornRadius: float = 15.2
     # HornInnerOffset measures distance the motor and inner side of the horn, where shaft is exposed
     # HornInnerOffset == the offset where the horn bolts should be
-    HornInnerOffset: float = 3
+    HornInnerOffset: float = 2
 
     # on the horn I own, there is an extra cylinder acting as the cap to cover the shaft gears, we need to leave a socket for it
-    HornCapHeight: float = 2 + 0.2
-    HornCapRadius: float = 6 + 0.2
+    HornCapHeight: float = 2
+    HornCapRadius: float = 6 + 0.1
     HornHeightBoundary: float = HornInnerOffset + HornHeight + HornCapHeight
 
     HornBoltLength: float = 40
 
-    # todo move to motor
     HornBottomPlaneRadius: float = 9
     HornBottomPlaneHeight: float = 1
 
@@ -395,8 +421,9 @@ class SegmentConfigs:
         actuator_type,
         joint_polygon_sides,
         roll_bone_holder_type=RollBoneHolderType.SPHERE,
-        bone_length=67,
-        pitch_angle=0,  # only for demonstrating the arm assembly
+        bone_length=47,
+        pitch_range_180=False,
+        allocate_with_pitch_angle=0,  # only for demonstrating the arm assembly
         nozzle_diameter=0.4,  # 0.4mm
         horn_bolt_side_print_opening=True,
         separable_bone=True,
@@ -405,18 +432,23 @@ class SegmentConfigs:
         HornBoltLengthOverride=None,
         gripper_servo_use_shaft_bolt=False,
     ):
-        # todo make abstract base class
         self.nozzle_diameter = nozzle_diameter
         self.horn_bolt_side_print_opening = horn_bolt_side_print_opening
         self.joint_polygon_sides = joint_polygon_sides
-        self.pitch_angle = pitch_angle
+        self.allocate_with_pitch_angle = allocate_with_pitch_angle
         self.separable_bone = separable_bone
         self.separable_bone_pitch_only = separable_bone_pitch_only
 
-        self.structural = StructuralConfigsSi(
-            bone_length=bone_length,
-            roll_bone_holder_type=roll_bone_holder_type,
-        )
+        if pitch_range_180:
+            self.structural = StructuralConfigsSi180(
+                bone_length=bone_length,
+                roll_bone_holder_type=roll_bone_holder_type,
+            )
+        else:
+            self.structural = StructuralConfigsSi270(
+                bone_length=bone_length,
+                roll_bone_holder_type=roll_bone_holder_type,
+            )
 
         self.BoltSocketDiamTightenFactor: float = BoltSocketDiamTightenFactor
 

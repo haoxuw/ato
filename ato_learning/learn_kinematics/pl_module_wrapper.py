@@ -27,7 +27,6 @@ class PlModuleWrapper(pl.LightningModule):
 
     def __init__(self, num_actuators=6, **kwargs) -> None:
         super().__init__(**kwargs)
-        # todo: support num_actuators = n
         self.num_actuators = num_actuators
         assert (
             torch.cuda.is_available()
