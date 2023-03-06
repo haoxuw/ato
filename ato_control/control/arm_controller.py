@@ -40,14 +40,14 @@ class ArmController:
         joystick_obj: ps4_joystick.Ps4Joystick,
         arm_segments_config: Dict[Tuple[int, str], ServoConnectionConfig],
         frame_rate=100,
-        frame_rate_for_solving_cartesian=10,
+        frame_rate_for_solving_cartesian=100,
         auto_save_controller_states_to_file=True,
         actuator_velocities_deg_per_ms=tuple(
             i * 0.01 for i in range(1, 10)
         ),  # angular velocity
-        cartesian_velocities_mm__per_ms=tuple(i * 0.1 for i in range(1, 10)),
+        cartesian_velocities_mm__per_ms=tuple(i * 0.01 for i in range(1, 10)),
         initial_velocity_level=2,
-        home_position=(0, 30, 0, 60, 0, 15, 0),  # (0, 60, 0, 80, 0, -50, 0),
+        home_position=(0, -60, 0, 100, 0, 50, 0),  # (0, -20, 0, 80, 0, 25, 0),
     ):
         self._input_states = None
         self.home_position = home_position
@@ -294,15 +294,23 @@ class ArmController:
         self,
         target_pose: motion.EndeffectorPose,
         time_delta_ms: float,
-        skip_validation=True,
+        skip_validation=False,
+        use_initial_joint_positions=True,
+        restrict_max_speed=True,
     ):
 
         start_time = datetime.now()
         actuator_positions = self.__get_indexed_actuator_positions()
-        initial_joint_positions = actuator_positions[:-1]  # remove gripper
+        if use_initial_joint_positions:
+            initial_joint_positions = actuator_positions[:-1]  # remove gripper
+        else:
+            initial_joint_positions = None
 
         target_positions = None
-        for orientation_mode in ("Z", "none"):  # todo try "all" axes
+        logging.error(
+            ("target_pose", str(target_pose), self.__solve_cartesian_once_in_x_cycles)
+        )
+        for orientation_mode in ("Z",):  # todo  try "none" "all" axes
             target_positions = target_pose.inverse_kinematics_ikpy(
                 # todo when all modes fail, remove initial_joint_positions, move to more flexible positions
                 initial_joint_positions=initial_joint_positions,
@@ -311,26 +319,27 @@ class ArmController:
             if target_positions is None:
                 continue
             if skip_validation:
-                actual_pose_vector = None
+                resulted_pose_vector = None
                 break
-            (validation_results, actual_pose_vector,) = target_pose.validate_ik_fk(
+            (validation_results, resulted_pose_vector,) = target_pose.validate_ik_fk(
                 new_joint_positions_sent_to_hardware=target_positions
             )
             if validation_results is True:
                 break
             else:
                 logging.debug(
-                    f"Failed to validate_ik_fk @{orientation_mode}: {target_pose.pose} != {actual_pose_vector}"
+                    f"Failed to validate_ik_fk @{orientation_mode}: {resulted_pose_vector} != {target_pose.pose}"
                 )
-        if target_positions is None:
-            positions_delta, actual_pose_vector = (None, None)
+        if target_positions is None or validation_results is None:
+            positions_delta, resulted_pose_vector = (None, None)
         else:
-            logging.debug(
-                f"validate_ik_fk @{orientation_mode}: {target_pose.pose} == {actual_pose_vector}"
+            logging.info(
+                f"validated ik_fk @{orientation_mode}: {resulted_pose_vector} == {target_pose.pose}"
             )
             positions_delta = target_positions - np.array(
                 self.__get_indexed_actuator_positions()
             )
+
             joint_velocity_limits = (
                 np.array(
                     [
@@ -345,8 +354,16 @@ class ArmController:
                 np.abs(positions_delta / joint_velocity_limits)
             )
 
-            if positions_normalization_ratio > 1:
-                positions_delta /= positions_normalization_ratio
+            if restrict_max_speed:
+                if positions_normalization_ratio > 1:
+                    positions_delta /= positions_normalization_ratio
+            logging.error(
+                (
+                    "Will move with delta: ",
+                    positions_delta,
+                    positions_normalization_ratio,
+                )
+            )
 
         # update perf stats
         ik_solving_time = (datetime.now() - start_time).total_seconds() * 1000.0
@@ -359,7 +376,7 @@ class ArmController:
             ) / (self.solver_perf_stats["count"] + 1)
         self.solver_perf_stats["count"] += 1
         logging.info(self.solver_perf_stats)
-        return (positions_delta, actual_pose_vector)
+        return (positions_delta, resulted_pose_vector)
 
     def move_to_installation_position(self):
         for servo in self._indexed_servo_objs:
@@ -631,6 +648,7 @@ class ArmController:
                 if target_pose is None:
                     self.__moving_towards_positions_delta = None
                 else:
+                    self._intended_pose = target_pose
                     (
                         positions_delta,
                         implied_current_pose_vector,
@@ -642,15 +660,11 @@ class ArmController:
             if (
                 self.__moving_towards_positions_delta is not None
             ):  # may inherit value from pervious cycles
-                if (
-                    self.__move_servos_by_joint_space_delta(
-                        joint_positions_delta=self.__moving_towards_positions_delta
-                    )
-                    is not None
-                ):
-                    self.__update_intended_pose_to_current_pose(
-                        override_pose=implied_current_pose_vector
-                    )
+
+                self._move_servos_by_joint_space_delta(
+                    joint_positions_delta=self.__moving_towards_positions_delta
+                )
+
             else:
                 # no movement, don't update intended pose
                 pass
@@ -661,9 +675,7 @@ class ArmController:
             )
             self.__update_intended_pose_to_current_pose()
 
-    def __move_servos_by_joint_space_delta(
-        self, joint_positions_delta, show_info=False
-    ):
+    def _move_servos_by_joint_space_delta(self, joint_positions_delta, show_info=False):
         if joint_positions_delta is None:
             return None
         return [

@@ -82,7 +82,7 @@ class ArmControllerJoystick(arm_controller.ArmController):
     def __locate_designated_axis(self, segment_id: int, enabler_axis: ActuatorPurpose):
         if enabler_axis == ActuatorPurpose.GRIPPER:
             # L2R2 is a special case
-            return JoystickAxis.qL2R2
+            return JoystickAxis.L2R2
         else:
             # if not L2 or R2, then it could be controlled by the two joysticks
             if segment_id not in self.activated_segment_ids:
@@ -122,6 +122,6 @@ class ArmControllerJoystick(arm_controller.ArmController):
                     * self.actuator_velocity
                 )
                 joint_positions_delta[index] = position_delta
-        return self.__move_servos_by_joint_space_delta(
+        return self._move_servos_by_joint_space_delta(
             joint_positions_delta=joint_positions_delta, show_info=show_info
         )
