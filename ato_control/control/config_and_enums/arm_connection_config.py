@@ -59,7 +59,7 @@ class ServoConnectionConfig:
         ) = connection_def
 
 
-# use (-85, 85) instead of (0, 180) on rotation_range to prevent damages from overshooting rotation
+# use (-130, 130) instead of (0, 180) on rotation_range to prevent damages from overshooting rotation
 
 # this object defines the particular arm config that I happen to be using now
 # Copied from the StructuralConfigsSi's configuration
@@ -88,7 +88,7 @@ arm_segments_config = {
                 270,
                 1,
                 90,
-                (-85, 85),
+                (-130, 130),
             )
         ),
     },
@@ -113,7 +113,7 @@ arm_segments_config = {
                 180,  # The prototype I put together happened have a 270 broken down -- using a 180 here as replacement.
                 1,
                 90,
-                (-85, 85),
+                (-130, 130),
             )
         ),
     },
@@ -138,7 +138,7 @@ arm_segments_config = {
                 270,
                 1,
                 90,
-                (-85, 85),
+                (-130, 130),
             )
         ),
     },
