@@ -99,13 +99,76 @@ class ServoMotor(motor_base.MotorBase):
                 .translate((0, self.motor_configs.ExtrusionOffsetY, 0))
             )
             motor_mesh = motor_mesh.add(extrusion)
-        if add_surface_give is True:
-            motor_mesh = motor_mesh.add(self.__wire_tunnel__())
+        if add_surface_give is True and self.add_wire_tunnel:
+            motor_mesh = motor_mesh.add(self.__wire_tunnel_shortcut__())
         motor_mesh = motor_mesh.translate((self.motor_configs.ShaftCenterOffsetX, 0, 0))
         # mesh = mesh.add(horn.mirror(self.workplane_primary))
         return motor_mesh
 
-    def __wire_tunnel__(self):
+    def __wire_tunnel_shortcut__(self):
+        surface_give = self.segment_configs.structural.SurfaceGive / 2
+        wire_tunnel_points = [
+            (0, -(self.motor_configs.MotorFastenerBoltSocketZTop + surface_give)),
+            (
+                -(
+                    self.motor_configs.Length / 2
+                    + self.motor_configs.MotorFastenerBoltSocketXExtra
+                    + surface_give
+                ),
+                -(self.motor_configs.MotorFastenerBoltSocketZTop + surface_give),
+            ),
+            (
+                -(
+                    self.motor_configs.Length / 2
+                    + self.motor_configs.MotorFastenerBoltSocketXExtra
+                    + surface_give
+                ),
+                -(self.motor_configs.Height + surface_give),
+            ),
+            (0, -(self.motor_configs.Height + surface_give)),
+        ]
+
+        wire_tunnel = (
+            cq.Workplane(self.workplane_tertiary)
+            .polyline(wire_tunnel_points)
+            .close()
+            .extrude(self.motor_configs.WireTunnelWidth)
+        )
+
+        height_offset = self.motor_configs.WireTunnelHeight * (2**0.5)
+        distance_height = self.motor_configs.Height  # arbitrarily far
+        distance_length = distance_height * 2  # makes a 1:2:sqrt(5) triangle
+        wire_exit_points = [
+            (-self.motor_configs.Length / 2, -self.motor_configs.Height / 2),
+            (
+                -self.motor_configs.Length / 2,
+                -self.motor_configs.Height / 2 + height_offset,
+            ),
+            (
+                -self.motor_configs.Length / 2 - distance_length,
+                -self.motor_configs.Height / 2 + height_offset + distance_height,
+            ),
+            (
+                -self.motor_configs.Length / 2 - distance_length,
+                -self.motor_configs.Height / 2 + distance_height,
+            ),
+        ]
+        wire_exit = (
+            cq.Workplane(self.workplane_tertiary)
+            .polyline(wire_exit_points)
+            .close()
+            .extrude(self.motor_configs.WireTunnelWidth)
+        )
+
+        return wire_tunnel.add(wire_exit).translate(
+            (
+                0,
+                self.motor_configs.WireTunnelWidth / 2,
+                0,
+            )
+        )
+
+    def __wire_tunnel_detour_back__(self):
         surface_give = self.segment_configs.structural.SurfaceGive
         wire_tunnel_points_half = [
             (0, 0),

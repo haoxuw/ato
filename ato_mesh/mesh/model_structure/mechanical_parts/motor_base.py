@@ -25,6 +25,7 @@ class MotorBase(cq_mesh.CqMesh):
         install_from_side_instead_along=True,
         generate_motor_fastening_bolt_space=None,
         use_shaft_bolt=True,
+        add_wire_tunnel=False,
     ):
         super().__init__(segment_configs=segment_configs, name=name)
         self.motor_configs: segment_configuration.MotorConfigsBase
@@ -55,6 +56,7 @@ class MotorBase(cq_mesh.CqMesh):
             install_from_side_instead_along=self.install_from_side_instead_along,
             motor_configs=self.motor_configs,
         )
+        self.add_wire_tunnel = add_wire_tunnel
 
     @property
     def name(self):
