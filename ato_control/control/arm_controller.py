@@ -40,7 +40,6 @@ class ArmController:
         joystick_obj: ps4_joystick.Ps4Joystick,
         arm_segments_config: Dict[Tuple[int, str], ServoConnectionConfig],
         frame_rate=100,
-        frame_rate_for_solving_cartesian=100,
         auto_save_controller_states_to_file=True,
         actuator_velocities_deg_per_ms=tuple(
             i * 0.01 for i in range(1, 10)
@@ -101,9 +100,6 @@ class ArmController:
         self.frame_rate = frame_rate
         self.interval_ms = 1000 // frame_rate
 
-        self.__solve_cartesian_once_in_x_cycles = max(
-            frame_rate // frame_rate_for_solving_cartesian, 1
-        )
         self.__auto_save_controller_states_to_file = auto_save_controller_states_to_file
 
         self.__controller_thread = None
@@ -143,7 +139,6 @@ class ArmController:
         self.__update_intended_pose_to_current_pose()
 
         self.__controller_start_time = datetime.now()
-        self.__clock_counter = 0
         self.ready = True
 
     @property
@@ -307,9 +302,7 @@ class ArmController:
             initial_joint_positions = None
 
         target_positions = None
-        logging.error(
-            ("target_pose", str(target_pose), self.__solve_cartesian_once_in_x_cycles)
-        )
+
         for orientation_mode in ("Z",):  # todo  try "none" "all" axes
             target_positions = target_pose.inverse_kinematics_ikpy(
                 # todo when all modes fail, remove initial_joint_positions, move to more flexible positions
@@ -333,7 +326,7 @@ class ArmController:
         if target_positions is None or validation_results is None:
             positions_delta, resulted_pose_vector = (None, None)
         else:
-            logging.info(
+            logging.debug(
                 f"validated ik_fk @{orientation_mode}: {resulted_pose_vector} == {target_pose.pose}"
             )
             positions_delta = target_positions - np.array(
@@ -357,7 +350,7 @@ class ArmController:
             if restrict_max_speed:
                 if positions_normalization_ratio > 1:
                     positions_delta /= positions_normalization_ratio
-            logging.error(
+            logging.debug(
                 (
                     "Will move with delta: ",
                     positions_delta,
@@ -375,7 +368,7 @@ class ArmController:
                 + ik_solving_time
             ) / (self.solver_perf_stats["count"] + 1)
         self.solver_perf_stats["count"] += 1
-        logging.info(self.solver_perf_stats)
+        logging.debug(self.solver_perf_stats)
         return (positions_delta, resulted_pose_vector)
 
     def move_to_installation_position(self):
@@ -619,7 +612,6 @@ class ArmController:
         )
 
     def __advance_clock(self, current_time, time_delta_ms):
-        self.__clock_counter += 1
         show_info = not self.__controller_states[
             ControllerStates.LOG_INFO_EACH_TENTHS_SECOND
         ]
@@ -640,22 +632,20 @@ class ArmController:
             ControllerStates.IN_CARTESIAN_NOT_JOINT_SPACE_MODE
         ]:
             # todo, when rpy was compromised, only set xyz in implied_current_pose_vector
-            implied_current_pose_vector = None
-            if self.__clock_counter % self.__solve_cartesian_once_in_x_cycles == 0:
-                target_pose = self._parse_movement_updates_in_cartesian_space(
-                    time_delta_ms=time_delta_ms,
+            target_pose = self._parse_movement_updates_in_cartesian_space(
+                time_delta_ms=time_delta_ms,
+            )
+            if target_pose is None:
+                self.__moving_towards_positions_delta = None
+            else:
+                self._intended_pose = target_pose
+                (
+                    positions_delta,
+                    _,  # implied_current_pose_vector,
+                ) = self.__solve_valid_movements_from_target_pose(
+                    target_pose=target_pose, time_delta_ms=time_delta_ms
                 )
-                if target_pose is None:
-                    self.__moving_towards_positions_delta = None
-                else:
-                    self._intended_pose = target_pose
-                    (
-                        positions_delta,
-                        implied_current_pose_vector,
-                    ) = self.__solve_valid_movements_from_target_pose(
-                        target_pose=target_pose, time_delta_ms=time_delta_ms
-                    )
-                    self.__moving_towards_positions_delta = positions_delta
+                self.__moving_towards_positions_delta = positions_delta
 
             if (
                 self.__moving_towards_positions_delta is not None

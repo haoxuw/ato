@@ -97,12 +97,13 @@ class JointAbstract(cq_mesh.CqMesh):
             .extrude(self.segment_configs.structural.JointLength)
         )
 
+        rect_radius = radius
         joint_pitch = (
             cq.Workplane(self.workplane_primary)
             .pushPoints([(0, 0)])
             .polygon(nSides=sides, diameter=self.outer_radius * 2)
-            .workplane(offset=-radius * 2)
-            .rect(0.001, 0.001)
+            .workplane(offset=-radius)
+            .rect(rect_radius, rect_radius)
             .loft()
         )
 
@@ -110,8 +111,8 @@ class JointAbstract(cq_mesh.CqMesh):
             cq.Workplane(self.workplane_primary)
             .pushPoints([(0, 0)])
             .polygon(nSides=sides, diameter=self.outer_radius * 2)
-            .workplane(offset=radius * 2)
-            .rect(0.001, 0.001)
+            .workplane(offset=radius)
+            .rect(rect_radius, rect_radius)
             .loft()
             .translate((0, 0, self.segment_configs.structural.JointLength))
         )

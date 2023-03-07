@@ -53,8 +53,18 @@ class SegmentAbstract(cq_mesh.CqMesh):
             .translate((-distance, 0, joint_whole.max_distance_from_surface))
         )
 
-        bone_mesh = self.bone_class(
-            segment_configs=self.segment_configs
-        ).printable_mesh()
+        bone_mesh = (
+            self.bone_class(segment_configs=self.segment_configs)
+            .printable_mesh()
+            .translate(
+                (
+                    0,
+                    -self.segment_configs.structural.JointLength
+                    + self.segment_configs.structural.MotorTopLocation
+                    + self.segment_configs.structural.BoneHolderRadius,
+                    0,
+                )
+            )
+        )
         arm_segment = bone_mesh.add(joint_pos).add(joint_neg)
         return arm_segment

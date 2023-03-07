@@ -52,34 +52,45 @@ class BonePitchAbstract(cq_mesh.CqMesh):
             self.segment_configs.structural.BoneRadius
             + self.segment_configs.structural.SurfaceGive
         )
-        bone_pitch_space = (
-            cq.Workplane(self.workplane_secondary)
-            .polyline(
-                [
-                    (0, pitch_wheel_space_radius),
-                    (
-                        self.segment_configs.structural.BoneLength,
-                        self.segment_configs.structural.BoneLength
-                        + pitch_wheel_space_radius,
-                    ),
-                    (
-                        self.segment_configs.structural.BoneLength,
-                        -self.segment_configs.structural.BoneLength,
-                    ),
-                    (0, -self.segment_configs.structural.BoneLength),
-                ]
-            )
-            .mirrorY()
-            .extrude(pitch_wheel_space_radius * 2)
-            .translate(
-                (
-                    -pitch_wheel_space_radius,
-                    0,
-                    0,
+        if self.segment_configs.structural.PitchRange == 270:
+            bone_pitch_space = (
+                cq.Workplane(self.workplane_secondary)
+                .polyline(
+                    [
+                        (0, pitch_wheel_space_radius * (2**0.5)),
+                        (
+                            self.segment_configs.structural.BoneLength,
+                            self.segment_configs.structural.BoneLength
+                            + pitch_wheel_space_radius * (2**0.5),
+                        ),
+                        (
+                            self.segment_configs.structural.BoneLength,
+                            -self.segment_configs.structural.BoneLength,
+                        ),
+                        (0, -self.segment_configs.structural.BoneLength),
+                    ]
                 )
+                .mirrorY()
+                .extrude(pitch_wheel_space_radius * 2)
+                .translate((-pitch_wheel_space_radius, 0, 0))
             )
+        elif self.segment_configs.structural.PitchRange == 180:
+            bone_pitch_space = cq.Workplane(self.workplane_primary).box(
+                pitch_wheel_space_radius * 2,
+                self.segment_configs.structural.Far,
+                pitch_wheel_space_radius * 2
+                + self.segment_configs.structural.PitchBoneMeshNetLength,
+            )
+        else:
+            raise Exception(
+                f"Unsupported pitch range {self.segment_configs.structural.PitchRange}"
+            )
+        pitch_offset = (
+            0,
+            0,
+            self.segment_configs.structural.PitchCenterLocationZ
+            - self.segment_configs.structural.PitchBoneMeshNetLength / 2,
         )
-        pitch_offset = (0, 0, self.segment_configs.structural.PitchCenterLocationZ)
         bone_pitch_space = bone_pitch_space.translate(pitch_offset)
 
         return mesh.add(bone_pitch_space)
@@ -195,10 +206,14 @@ class BoneAbstract(cq_mesh.CqMesh):
             - self.segment_configs.structural.PitchCenterLocationZ
         )
 
-    def __add_complementary(self, roll, pitch):
+    def __add_complementary(self, roll, pitch, roll_comp=None, pitch_comp=None):
+        if roll_comp is None:
+            roll_comp = roll
+        if pitch_comp is None:
+            pitch_comp = pitch
         offset_z = self._get_roll_pitch_z_distance()
-        roll_whole = roll.add(pitch.translate((0, 0, offset_z)))
-        pitch_whole = pitch.add(roll.translate((0, 0, -offset_z)))
+        roll_whole = roll.add(pitch_comp.translate((0, 0, offset_z)))
+        pitch_whole = pitch.add(roll_comp.translate((0, 0, -offset_z)))
         return roll_whole, pitch_whole
 
     def _get_roll_pitch_model_mesh(self, add_surface_give):
@@ -218,13 +233,23 @@ class BoneAbstract(cq_mesh.CqMesh):
         return self.__merge_roll_with_pitch(roll=roll, pitch=pitch)
 
     def space_mesh(self):
-        roll = self.bone_roll_class(segment_configs=self.segment_configs).space_mesh()
-        pitch = self.bone_pitch_class(segment_configs=self.segment_configs).space_mesh()
+        roll_space = self.bone_roll_class(
+            segment_configs=self.segment_configs
+        ).space_mesh()
+        pitch_space = self.bone_pitch_class(
+            segment_configs=self.segment_configs
+        ).space_mesh()
+        roll_mesh, pitch_mesh = self._get_roll_pitch_model_mesh(add_surface_give=True)
 
         if self.allocate_both_bones_as_whole:
-            roll, pitch = self.__add_complementary(roll=roll, pitch=pitch)
+            roll_space, pitch_space = self.__add_complementary(
+                roll=roll_space,
+                pitch=pitch_space,
+                roll_comp=roll_mesh,
+                pitch_comp=pitch_mesh,
+            )
 
-        return self.__merge_roll_with_pitch(roll=roll, pitch=pitch)
+        return self.__merge_roll_with_pitch(roll=roll_space, pitch=pitch_space)
 
     def _rearranged_connected_roll_pitch_(
         self, horn_side_downwards=False, add_surface_give=False

@@ -110,7 +110,7 @@ arm_segments_config = {
                 ActuatorPurpose.PITCH,
                 PiHeaderIdToBCM.THIRTY_THREE,
                 servo_ds5160.ServoDs5160,
-                180,  # The prototype I put together happened have a 270 broken down -- using a 180 here as replacement.
+                270,
                 1,
                 90,
                 (-130, 130),

@@ -67,19 +67,15 @@ class JointAugmented(joint_abstract.JointAbstract):
             self.segment_configs.structural.JointRadius
             / self.segment_configs.structural.BoltOffsetCoefficientX
         )  # wide but avoid motor wall
-        start_offset_z = (
-            self.segment_configs.structural.JointRadius
-            / self.segment_configs.structural.BoltOffsetCoefficientZ
-        )
-        offset_z_factor = 1.5
         #####################
 
         for offset_x in [dist_x, -dist_x]:
             for offset_z in [
-                -start_offset_z,
-                start_offset_z
-                + self.segment_configs.structural.JointLength
-                - self.segment_configs.structural.BoneHolderRadius * offset_z_factor,
+                -self.segment_configs.structural.JointRadius
+                / self.segment_configs.structural.BoltOffsetCoefficientZTop,
+                self.segment_configs.structural.JointRadius
+                / self.segment_configs.structural.BoltOffsetCoefficientZDown
+                + self.segment_configs.structural.MotorTopLocation,
             ]:
                 space = relocate_for_base(
                     joint_bolt.space_mesh(),
