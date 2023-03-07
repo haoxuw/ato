@@ -62,7 +62,7 @@ class StructuralConfigsSi180:
     ## values that are configurable:
     JointLength: float = 110
     PitchRange: float = 180
-    MotorTopLocation: float = 85
+    MotorTopLocation: float = 70
 
     PitchMotorOffsetX: float = 25  # larger is outwards
     PitchCenterLocationZ: float = (
@@ -88,13 +88,11 @@ class StructuralConfigsSi180:
 
     # coefficients are empirical, and was used to calculate offsets of the bolts binding two pats of the joints
     BoltOffsetCoefficientX: float = 1.58  # less is outwards
-    BoltOffsetCoefficientZ: float = 1.74  # less is outwards
+    BoltOffsetCoefficientZTop: float = 1.74  # less is upwards
+    BoltOffsetCoefficientZDown: float = 1.74  # less is downwards
 
     SurfaceGive: float = 0.2
     MountUnitSize: float = 90
-
-    ##########################################
-    ## values that are derived
 
     JointSphereHolders = [
         (
@@ -169,6 +167,45 @@ class StructuralConfigsSi270(StructuralConfigsSi180):
 
     JointLength: float = 120
     PitchRange: float = 270
+    MotorTopLocation: float = 80
+    BoltOffsetCoefficientX: float = 1.58  # less is outwards
+    BoltOffsetCoefficientZTop: float = 1.64  # less is upwards
+    BoltOffsetCoefficientZDown: float = 1.74  # less is downwards
+
+    JointRadius: float = 33
+    BoneRadius: float = 16.5
+
+    BoneHolderRadius: float = BoneRadius * 1.4
+    RollCylinderHolderDepth: float = BoneHolderRadius - BoneRadius
+    RollHolderOffsetZ: float = 15
+
+    JointSphereHolders = [
+        (
+            (
+                BoneRadius + RollCylinderHolderDepth * 1.4,
+                0,
+                MotorTopLocation + RollHolderOffsetZ / 2,
+            ),
+            5,
+        ),
+        (
+            (
+                -BoneRadius - RollCylinderHolderDepth * 1.4,
+                0,
+                MotorTopLocation + RollHolderOffsetZ / 2,
+            ),
+            5,
+        ),
+        (
+            (
+                (BoneRadius + RollCylinderHolderDepth + JointRadius) / 2,
+                0,
+                BoneRadius * 4 / 5,
+            ),
+            3,
+        ),
+        (((BoneRadius + RollCylinderHolderDepth + JointRadius) / 2, 0, 0), 3),
+    ]  # offset_x, offset_y, radius
 
 
 @dataclass
