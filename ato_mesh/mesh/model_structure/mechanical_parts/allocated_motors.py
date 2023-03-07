@@ -38,6 +38,7 @@ class AllocatedMotors(cq_mesh.CqMesh):
             install_from_side_instead_along=True,
             generate_motor_fastening_bolt_space=True,
             use_shaft_bolt=True,
+            add_wire_tunnel=False,
         )
         self.roll_motor_obj: motor_base.MotorBase = motor_mesh_class(
             segment_configs=segment_configs,
@@ -45,6 +46,7 @@ class AllocatedMotors(cq_mesh.CqMesh):
             install_from_side_instead_along=False,
             generate_motor_fastening_bolt_space=False,
             use_shaft_bolt=False,
+            add_wire_tunnel=True,
         )
 
     def supporting_mesh(self):
