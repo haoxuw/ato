@@ -141,6 +141,9 @@ class ArmController:
         self.__controller_start_time = datetime.now()
         self.ready = True
 
+    def reset_input_states(self):
+        return
+
     @property
     def is_at_home_position(self):
         return np.allclose(
@@ -303,11 +306,13 @@ class ArmController:
 
         target_positions = None
 
-        for orientation_mode in ("Z",):  # todo  try "none" "all" axes
+        # for orientation_mode in ("Z",):  # todo  try "none" "all" axes
+        # todo R3 lock
+        for solver_mode in ("Forward",):  # todo  try "none" "all" axes
             target_positions = target_pose.inverse_kinematics_ikpy(
                 # todo when all modes fail, remove initial_joint_positions, move to more flexible positions
                 initial_joint_positions=initial_joint_positions,
-                orientation_mode=orientation_mode,
+                solver_mode=solver_mode,
             )
             if target_positions is None:
                 continue
@@ -321,13 +326,13 @@ class ArmController:
                 break
             else:
                 logging.debug(
-                    f"Failed to validate_ik_fk @{orientation_mode}: {resulted_pose_vector} != {target_pose.pose}"
+                    f"Failed to validate_ik_fk @{solver_mode}: {resulted_pose_vector} != {target_pose.pose}"
                 )
         if target_positions is None or validation_results is None:
             positions_delta, resulted_pose_vector = (None, None)
         else:
             logging.debug(
-                f"validated ik_fk @{orientation_mode}: {resulted_pose_vector} == {target_pose.pose}"
+                f"validated ik_fk @{solver_mode}: {resulted_pose_vector} == {target_pose.pose}"
             )
             positions_delta = target_positions - np.array(
                 self.__get_indexed_actuator_positions()

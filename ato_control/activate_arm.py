@@ -12,6 +12,7 @@ import argparse
 import time
 
 from control import (
+    arm_controller_ik_cache,
     arm_controller_joystick,
     arm_controller_ml_training,
     ps4_joystick,
@@ -49,6 +50,11 @@ def get_args():
         help="Do not run the arm, but generate training data.",
     )
     parser.add_argument(
+        "--generate_ik_cache",
+        action="store_true",
+        help="Do not run the arm, but generate ik cache.",
+    )
+    parser.add_argument(
         "--frame_rate",
         type=int,
         default=500,
@@ -59,15 +65,28 @@ def get_args():
         default="~/.ato/training_data",
         help="Add a suffix to the filename of generated training data.",
     )
+    parser.add_argument(
+        "--ik_cache_filepath_prefix",
+        type=str,
+        default="~/.ato/ik_cache",
+        help="Add a suffix to the filename of generated ik cache.",
+    )
     return parser.parse_args()
 
 
-def create_arm_controller_obj(args, for_training=False):
+def create_arm_controller_obj(args, for_training=False, generate_ik_cache=0):
     pi = raspberry_pi.RaspberryPi()
     joystick = ps4_joystick.Ps4Joystick(interface=f"/dev/input/js{str(args.input_js)}")
     if for_training:
         arm_ctl = arm_controller_ml_training.ArmControllerMlTraining(
             frame_rate=args.frame_rate,
+            pi_obj=pi,
+            joystick_obj=joystick,
+            arm_segments_config=arm_segments_config,
+        )
+    elif generate_ik_cache > 0:
+        arm_ctl = arm_controller_ik_cache.ArmControllerIkCache(
+            segment_lengths=(210, (210) * 2, 147),
             pi_obj=pi,
             joystick_obj=joystick,
             arm_segments_config=arm_segments_config,
@@ -98,6 +117,13 @@ def main():
         arm_ctl.generate_training_data(
             size=args.generate_training_data,
             training_data_filepath_prefix=args.training_data_filepath_prefix,
+        )
+    elif args.generate_ik_cache is True:
+        arm_ctl = create_arm_controller_obj(
+            args=args, generate_ik_cache=args.generate_ik_cache
+        )
+        arm_ctl.generate_ik_cache(
+            ik_cache_filepath_prefix=args.ik_cache_filepath_prefix,
         )
     else:
         arm_ctl = create_arm_controller_obj(
