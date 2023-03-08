@@ -417,7 +417,7 @@ class EndeffectorPose(Position):
 
     def inverse_kinematics_ikpy(
         self,
-        orientation_mode,
+        solver_mode,
         initial_joint_positions=None,  # excludes gripper, unlike current_actuator_positions which includes gripper
     ):
         if initial_joint_positions is None:
@@ -431,15 +431,19 @@ class EndeffectorPose(Position):
         ).as_matrix()
 
         # if align all, or only z or only pos
-        if orientation_mode == "all":
-            pass
-        elif orientation_mode == "Z":
-            # to align with unit vector of z axis -- because gripper was pointing upwards at installation
-            target_orientation = target_orientation[2]
+        if solver_mode == "Forward":
             orientation_mode = "Z"
-        elif orientation_mode == "none" or orientation_mode is None:
-            target_orientation = None
+            target_orientation = [0, -1, 0]
+        elif solver_mode == "All":
+            orientation_mode = "all"  # convention keyword of ikpy
+            # target_orientation = target_orientation
+        elif solver_mode == "Z":
+            # to align with unit vector of z axis -- because gripper was pointing upwards at installation
+            orientation_mode = "Z"
+            target_orientation = target_orientation[2]
+        elif solver_mode == "none" or solver_mode is None:
             orientation_mode = None
+            target_orientation = None
         else:
             raise Exception(f"Unexpected orientation_mode == {orientation_mode}")
 
