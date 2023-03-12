@@ -46,7 +46,7 @@ class ArmController:
         ),  # angular velocity
         cartesian_velocities_mm__per_ms=tuple(i * 0.01 for i in range(1, 10)),
         initial_velocity_level=2,
-        home_positions=(0, -60, 0, 100, 0, 50, 0),  # (0, -20, 0, 80, 0, 25, 0),
+        home_positions=(0, 60, 0, -100, 0, -50, 0),  # (0, 20, 0, -80, 0, -30, 0),
     ):
         self._input_states = None
         self.home_positions = home_positions
@@ -391,7 +391,7 @@ class ArmController:
     def switch_forward_orientation_mode(self):
         if self.__solver_priorities == (SolverMode.FORWARD,):
             self.__solver_priorities = (
-                # SolverMode.ALL,
+                SolverMode.ALL,
                 SolverMode.Z,
                 SolverMode.FORWARD,
             )  # order matters
@@ -821,14 +821,13 @@ class ArmController:
         fig = plt.figure()
         axes_limits = max(self._indexed_segment_lengths) * 3
         ax = plt.axes(projection="3d")
-        # camera frame and robot frame is different, for robot:
-        # axis are determined by left hand rule, X = thumb, Y = middle, Z = ring
+        # axis are determined by right hand rule, X = thumb = roll, Y = index = pitch, Z = middle = yaw
         # assume the first segment of arm is installed upwards, so the X axis (roll) would be camera's Z
         ax.set_xlabel("X")
         ax.set_ylabel("Y")
         ax.set_zlabel("Z")
         ax.set_xlim(-axes_limits, axes_limits)
-        ax.set_ylim(axes_limits, -axes_limits)
+        ax.set_ylim(-axes_limits, axes_limits)
         ax.set_zlim(-axes_limits / 10, axes_limits)
 
         plotted_segments = ax.plot([], [], [], marker="o", color="orange")
@@ -894,7 +893,7 @@ class ArmController:
                         ).apply(axis)
                         for axis in global_frame
                     ]
-                )
+                ).transpose()
                 plotted_elements["intended_pose"] = draw_3_axes(
                     xyz=np.array([self._intended_pose.xyz]),
                     uvw=np.array([uvw]),

@@ -22,5 +22,6 @@ class ControllerStates:
 class SolverMode:
     FORWARD = "Forward"
     ALL = "All"
+    Y = "Y"
     Z = "Z"
     NONE = "None"

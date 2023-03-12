@@ -46,27 +46,28 @@ class ArmControllerJoystick(arm_controller.ArmController):
 
         # mapping defined according to reset_input_states()
         mapping = {
-            0: JoystickAxis.LEFT_HORIZONTAL,  # x
-            1: JoystickAxis.LEFT_VERTICAL,  # y
-            2: (Button.CROSS, Button.TRIANGLE),  # z
+            0: (1, JoystickAxis.LEFT_HORIZONTAL),  # x
+            1: (-1, JoystickAxis.LEFT_VERTICAL),  # y
+            2: (1, (Button.CROSS, Button.TRIANGLE)),  # z
             # gripper reference frame is intrinsic, and its initial frame is different from camera
-            3: JoystickAxis.RIGHT_VERTICAL,  # pitch
-            4: JoystickAxis.RIGHT_HORIZONTAL,  # yaw
-            5: (Button.SQUARE, Button.CIRCLE),  # roll
-            6: JoystickAxis.L2R2,  # gripper
+            3: (-1, JoystickAxis.RIGHT_VERTICAL),  # pitch
+            4: (1, JoystickAxis.RIGHT_HORIZONTAL),  # yaw
+            5: (1, (Button.SQUARE, Button.CIRCLE)),  # roll
+            6: (1, JoystickAxis.L2R2),  # gripper
         }
         to_move = False
         cartesian_delta = [0] * 7
-        for index, designated_axis in mapping.items():
+        for index, (direction, designated_axis) in mapping.items():
             if isinstance(designated_axis, tuple):
                 offset_ratio = 0
                 if self._input_states[designated_axis[0]]:
-                    offset_ratio -= 1
+                    offset_ratio -= direction
                 if self._input_states[designated_axis[1]]:
-                    offset_ratio += 1
+                    offset_ratio += direction
                 # e.g. CROSS+TRIANGLE would cancel out
             else:
                 offset_ratio = self._input_states[designated_axis] or 0
+                offset_ratio *= direction
             if offset_ratio != 0:
                 to_move = True
                 cartesian_delta[index] = offset_ratio

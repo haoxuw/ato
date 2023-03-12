@@ -76,8 +76,8 @@ arm_segments_config = {
                 servo_ds5160.ServoDs5160,
                 270,
                 1,
-                90,
-                (-90, 180),
+                135,
+                (-135, 135),
             ),
         ),
         ActuatorPurpose.PITCH: ServoConnectionConfig(
@@ -87,7 +87,7 @@ arm_segments_config = {
                 servo_ds5160.ServoDs5160,
                 270,
                 1,
-                90,
+                135,
                 (-130, 130),
             )
         ),
@@ -101,8 +101,8 @@ arm_segments_config = {
                 servo_ds5160.ServoDs5160,
                 270,
                 1,
-                90,
-                (-90, 180),
+                135,
+                (-135, 135),
             )
         ),
         ActuatorPurpose.PITCH: ServoConnectionConfig(
@@ -112,7 +112,7 @@ arm_segments_config = {
                 servo_ds5160.ServoDs5160,
                 270,
                 1,
-                90,
+                135,
                 (-130, 130),
             )
         ),
@@ -126,8 +126,8 @@ arm_segments_config = {
                 servo_ds5160.ServoDs5160,
                 270,
                 1,
-                90,
-                (-90, 180),
+                135,
+                (-135, 135),
             )
         ),
         ActuatorPurpose.PITCH: ServoConnectionConfig(
@@ -137,7 +137,7 @@ arm_segments_config = {
                 servo_ds5160.ServoDs5160,
                 270,
                 1,
-                90,
+                135,
                 (-130, 130),
             )
         ),
