@@ -19,4 +19,4 @@ This package uses the following components to implement control flow of the arm
 #### If you have ros installed, you can examine the URDF models by
 
 > $ sudo apt-get install libatlas-base-dev -y
-> $ ./ato_control/scripts/download_urdf_mesh_stl.sh && roslaunch urdf_tutorial display.launch model:=ato_3_seg.urdf
+> $ ./ato_control/scripts/download_urdf_mesh_stl.sh && roslaunch urdf_tutorial display.launch model:=./ato_control/ato_3_seg.urdf

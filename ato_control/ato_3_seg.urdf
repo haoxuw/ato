@@ -112,7 +112,7 @@
 
   <joint name="bone_3_to_endeffector" type="fixed">
     <parent link="bone_3"/>
-    <child link="endeffector"/>
+    <child link="endeffector_link"/>
     <origin xyz="0 0 147" rpy="0 0 0"/>
   </joint>
 

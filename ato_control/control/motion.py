@@ -267,15 +267,14 @@ class ActuatorPositions(Position):
 
         # frame_ref describes the frame of reference's axes
         global_frame = np.array([[1, 0, 0], [0, 1, 0], [0, 0, 1]])  # x y z axes
-        body_frame_ref = np.array(global_frame)
+        body_frame_ref = np.array([[1, 0, 0], [0, 1, 0], [0, 0, 1]])
 
         current_frame_ref_origin = np.array((0, 0, 0), dtype="float")
         segments_xyz = [current_frame_ref_origin]  # base mount
         segments_reference_frames = []
 
         # in each iteration, we first rotate body_frame_ref, which track orientation of the next segment
-        # then we project arm_segment vector to body_frame_ref, for now because body_frame_ref is (l,0,0)
-        # the projection is always X/roll of body_frame_ref, i.e. arm_segment @ body_frame_ref  == body_frame_ref[0]
+        # then we rotate arm_segment vector to body_frame_ref by: arm_segment @ body_frame_ref
         # finally we add this projected vector to current_frame_ref_origin, and move on to the next segment
         for rotation, arm_segment_length in zip(
             rotation_sequence, self.__class__.arm_segment_lengths
@@ -301,7 +300,9 @@ class ActuatorPositions(Position):
             + np.array([0, 0, self.__class__.gripper_length]) @ body_frame_ref
         )
         endeffector_reference_frame = body_frame_ref
-        endeffector_rpy = Rotation.align_vectors(global_frame, body_frame_ref)[0]
+        endeffector_rpy = Rotation.align_vectors(a=body_frame_ref, b=global_frame)[
+            0
+        ]  # body_frame_ref is body observed in the initial global frame
         endeffector_rpy_intrinsic = endeffector_rpy.as_euler("XYZ", degrees=True)
         endeffector_rpy_extrinsic = endeffector_rpy.as_euler("xyz", degrees=True)
         return {
@@ -331,7 +332,7 @@ class ActuatorPositions(Position):
         )
         xyz = estimated_ee_pose_matrix_via_fk[:3, 3]
         rpy = Rotation.from_matrix(estimated_ee_pose_matrix_via_fk[:3, :3]).as_euler(
-            "XYZ", degrees=False
+            "XYZ", degrees=True
         )
         actual_pose_vector = np.concatenate([xyz, rpy])
         return actual_pose_vector
@@ -403,9 +404,9 @@ class EndeffectorPose(Position):
     def apply_delta(self, pose_delta, gripper_delta=0):
         self._verify_sequence_valid(sequence=pose_delta, shape=(6,))
         self.__pose[:3] += np.array(pose_delta)[:3]
-        rot = Rotation.from_euler(
+        rot = Rotation.from_euler("XYZ", self.rpy, degrees=True) * Rotation.from_euler(
             "XYZ", pose_delta[3:6], degrees=True
-        ) * Rotation.from_euler("XYZ", self.rpy, degrees=True)
+        )
         self.__pose[3:6] = rot.as_euler("XYZ", degrees=True)
         self.__gripper_position += gripper_delta
         return self
@@ -450,14 +451,14 @@ class EndeffectorPose(Position):
         # if align all, or only z or only pos
         if solver_mode == SolverMode.FORWARD:
             orientation_mode = "Z"
-            target_orientation = [0, -1, 0]
+            target_orientation = [0, 1, 0]
         elif solver_mode == SolverMode.ALL:
             orientation_mode = "all"  # convention keyword of ikpy
             # target_orientation = target_orientation
         elif solver_mode == SolverMode.Z:
             # to align with unit vector of z axis -- because gripper was pointing upwards at installation
             orientation_mode = "Z"
-            target_orientation = target_orientation[2]
+            target_orientation = target_orientation[:, 2]
         elif solver_mode == SolverMode.NONE:
             orientation_mode = None
             target_orientation = None
@@ -495,19 +496,17 @@ class EndeffectorPose(Position):
             "xyz_atol": 10,  # mm
             "rpy_atol": 3,  # degrees
         },
-        use_ikpy=False,
+        use_ikpy=True,
     ):
         if use_ikpy:
             estimated_ee_pose_vector = ActuatorPositions(
                 positions=new_joint_positions_sent_to_hardware
             ).forward_kinematics_ikpy()
-            logging.error(estimated_ee_pose_vector)
-        if True:
+        else:
             estimated_ee_pose = ActuatorPositions(
                 positions=new_joint_positions_sent_to_hardware
             ).forward_kinematics_math_based()
             estimated_ee_pose_vector = estimated_ee_pose["endeffector_pose_intrinsic"]
-            logging.warning(estimated_ee_pose_vector)
 
         intended_pose_vector = self.pose
         xyz_validated = np.allclose(

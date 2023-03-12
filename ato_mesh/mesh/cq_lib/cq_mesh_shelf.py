@@ -35,7 +35,7 @@ class CqMeshShelf:
         # ratio: X:1 Y:2 Z:3
         z_axis = cq.Workplane("XY").rect(1, 1).extrude(self.distance * 0.9)
         # extrude towards negative because y axis of the primary view plane, i.e.:
-        # axis are determined by left hand rule, X = thumb, Y = middle, Z = ring
+        # axis are determined by left hand rule, X = thumb = roll, Y = index = pitch, Z = middle = yaw
         # meanwhile only on XZ plane, positive extrude is towards the opposite of Y
         # meaning positive extrusion of ZX is facing positive Y
         y_axis = cq.Workplane("XZ").rect(1, 1).extrude(-self.distance * 0.6)
