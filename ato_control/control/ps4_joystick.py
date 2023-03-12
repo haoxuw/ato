@@ -14,9 +14,9 @@ import threading
 import control
 from control.config_and_enums.joystick_input_types import (
     Button,
-    ControllerStates,
     JoystickAxis,
 )
+from control.config_and_enums.controller_enums import SolverMode, ControllerStates
 from control.interface_classes import input_device_interface
 from pyPS4Controller.controller import Controller
 
@@ -278,7 +278,7 @@ class Ps4Joystick(Controller, input_device_interface.InputDeviceInterface):
         if self.in_setting_mode:
             self.__arm_controller_obj.move_to_installation_position()
         else:
-            self.__arm_controller_obj.move_to_home_position_otherwise_zeros()
+            self.__arm_controller_obj.move_to_home_positions_otherwise_zeros()
         logging.debug("on_L3_release")
 
     def on_R3_up(self, value):
@@ -335,7 +335,8 @@ class Ps4Joystick(Controller, input_device_interface.InputDeviceInterface):
             else:
                 self.__arm_controller_obj.start_saving_trajectory()
         else:
-            self.__arm_controller_obj.replay_trajectory()
+            self.__arm_controller_obj.switch_forward_orientation_mode()
+            # self.__arm_controller_obj.replay_trajectory() # todo create trajectory mode
         logging.debug("on_R3_release")
 
     def on_options_press(self):

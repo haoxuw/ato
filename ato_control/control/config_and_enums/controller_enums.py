@@ -8,9 +8,19 @@
 # MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.
 # See more details in the LICENSE folder.
 
-from . import (
-    arm_connection_config,
-    controller_enums,
-    debugging_configs,
-    joystick_input_types,
-)
+from dataclasses import dataclass
+
+
+@dataclass
+class ControllerStates:
+    IN_SAVING_TRAJECTORY_MODE = "IN_SAVING_TRAJECTORY_MODE"
+    IN_CARTESIAN_NOT_JOINT_SPACE_MODE = "IN_CARTESIAN_NOT_JOINT_SPACE_MODE"
+    LOG_INFO_EACH_TENTHS_SECOND = "__DEBUG_STATE__LOG_INFO_EACH_TENTHS_SECOND"
+
+
+@dataclass
+class SolverMode:
+    FORWARD = "Forward"
+    ALL = "All"
+    Z = "Z"
+    NONE = "None"

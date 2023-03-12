@@ -27,7 +27,7 @@ from control.config_and_enums.arm_connection_config import (
     SegmentConfigTypes,
     ServoConnectionConfig,
 )
-from control.config_and_enums.joystick_input_types import ControllerStates
+from control.config_and_enums.controller_enums import ControllerStates, SolverMode
 from control.interface_classes import servo_interface
 from matplotlib.animation import FuncAnimation
 from scipy.spatial.transform import Rotation
@@ -46,10 +46,10 @@ class ArmController:
         ),  # angular velocity
         cartesian_velocities_mm__per_ms=tuple(i * 0.01 for i in range(1, 10)),
         initial_velocity_level=2,
-        home_position=(0, -60, 0, 100, 0, 50, 0),  # (0, -20, 0, 80, 0, 25, 0),
+        home_positions=(0, -60, 0, 100, 0, 50, 0),  # (0, -20, 0, 80, 0, 25, 0),
     ):
         self._input_states = None
-        self.home_position = home_position
+        self.home_positions = home_positions
         assert isinstance(pi_obj, raspberry_pi.RaspberryPi)
         self.__pi_obj = pi_obj
 
@@ -121,6 +121,8 @@ class ArmController:
 
         self.__moving_towards_positions_delta = None
 
+        self.__solver_priorities = (SolverMode.FORWARD,)
+
         # cartesian space control, tracks:
         # where is the intended pose
         self._intended_pose: motion.EndeffectorPose = None
@@ -145,9 +147,9 @@ class ArmController:
         return
 
     @property
-    def is_at_home_position(self):
+    def is_at_home_positions(self):
         return np.allclose(
-            self.home_position,
+            self.home_positions,
             self.__get_indexed_actuator_positions(),
             rtol=0.001,
         )  # 0.1% tolerance
@@ -305,63 +307,55 @@ class ArmController:
             initial_joint_positions = None
 
         target_positions = None
+        positions_delta, resulted_pose_vector = (None, None)
 
-        # for orientation_mode in ("Z",):  # todo  try "none" "all" axes
-        # todo R3 lock
-        for solver_mode in ("Forward",):  # todo  try "none" "all" axes
-            target_positions = target_pose.inverse_kinematics_ikpy(
+        for solver_mode in self.__solver_priorities:
+            (
+                target_positions,
+                resulted_pose_vector,
+            ) = target_pose.inverse_kinematics_ikpy(
                 # todo when all modes fail, remove initial_joint_positions, move to more flexible positions
                 initial_joint_positions=initial_joint_positions,
                 solver_mode=solver_mode,
+                skip_validation=skip_validation,
             )
-            if target_positions is None:
-                continue
-            if skip_validation:
-                resulted_pose_vector = None
-                break
-            (validation_results, resulted_pose_vector,) = target_pose.validate_ik_fk(
-                new_joint_positions_sent_to_hardware=target_positions
-            )
-            if validation_results is True:
+            if target_positions is not None:
+                logging.debug(
+                    f"validated ik_fk @{solver_mode}: {resulted_pose_vector} == {target_pose.pose}"
+                )
+                positions_delta = target_positions - np.array(
+                    self.__get_indexed_actuator_positions()
+                )
+
+                joint_velocity_limits = (
+                    np.array(
+                        [
+                            config.velocity_magnifier
+                            for config in self._indexed_servo_configs
+                        ]
+                    )
+                    * self.actuator_velocity
+                    * time_delta_ms
+                )
+                positions_normalization_ratio = np.max(
+                    np.abs(positions_delta / joint_velocity_limits)
+                )
+
+                if restrict_max_speed:
+                    if positions_normalization_ratio > 1:
+                        positions_delta /= positions_normalization_ratio
+                logging.debug(
+                    (
+                        "Will move with delta: ",
+                        positions_delta,
+                        positions_normalization_ratio,
+                    )
+                )
                 break
             else:
                 logging.debug(
-                    f"Failed to validate_ik_fk @{solver_mode}: {resulted_pose_vector} != {target_pose.pose}"
+                    f"Failed to solve @{solver_mode}: {resulted_pose_vector} != {target_pose.pose}"
                 )
-        if target_positions is None or validation_results is None:
-            positions_delta, resulted_pose_vector = (None, None)
-        else:
-            logging.debug(
-                f"validated ik_fk @{solver_mode}: {resulted_pose_vector} == {target_pose.pose}"
-            )
-            positions_delta = target_positions - np.array(
-                self.__get_indexed_actuator_positions()
-            )
-
-            joint_velocity_limits = (
-                np.array(
-                    [
-                        config.velocity_magnifier
-                        for config in self._indexed_servo_configs
-                    ]
-                )
-                * self.actuator_velocity
-                * time_delta_ms
-            )
-            positions_normalization_ratio = np.max(
-                np.abs(positions_delta / joint_velocity_limits)
-            )
-
-            if restrict_max_speed:
-                if positions_normalization_ratio > 1:
-                    positions_delta /= positions_normalization_ratio
-            logging.debug(
-                (
-                    "Will move with delta: ",
-                    positions_delta,
-                    positions_normalization_ratio,
-                )
-            )
 
         # update perf stats
         ik_solving_time = (datetime.now() - start_time).total_seconds() * 1000.0
@@ -381,18 +375,28 @@ class ArmController:
             servo.move_to_installation_position()
 
     # if already at home position, move all actuators to logical zero (installation position)
-    def move_to_home_position_otherwise_zeros(self):
+    def move_to_home_positions_otherwise_zeros(self):
         num_servos = 7
         assert (
             len(self._indexed_servo_names) == num_servos
         ), f"Currently this function only support for {(num_servos-1)/2} segment arm."
 
-        if self.is_at_home_position:
+        if self.is_at_home_positions:
             actuator_positions = motion.ActuatorPositions(positions=[0] * num_servos)
             self.move_to_actuator_positions(actuator_positions=actuator_positions)
         else:
-            actuator_positions = motion.ActuatorPositions(positions=self.home_position)
+            actuator_positions = motion.ActuatorPositions(positions=self.home_positions)
             self.move_to_actuator_positions(actuator_positions=actuator_positions)
+
+    def switch_forward_orientation_mode(self):
+        if self.__solver_priorities == (SolverMode.FORWARD,):
+            self.__solver_priorities = (
+                # SolverMode.ALL,
+                SolverMode.Z,
+                SolverMode.FORWARD,
+            )  # order matters
+        else:
+            self.__solver_priorities = (SolverMode.FORWARD,)
 
     def __reset_trajectory(self):
         self.__active_trajectory: motion.TrajectoryActuatorPositions = (
