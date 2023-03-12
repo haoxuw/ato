@@ -1,18 +1,23 @@
 #!/bin/sh
 set -e
 
+echo "Running pre-push..."
+
 if [ -f "./ato_control/scripts/lint.sh" ]
 then
+    echo "ato_control/scripts/lint.sh"
     ato_control/scripts/lint.sh
 fi
 
 if [ -f "./ato_mesh/scripts/lint.sh" ]
 then
+    echo "ato_mesh/scripts/lint.sh"
     ato_mesh/scripts/lint.sh
 fi
 
 if [ -f "./ato_learning/scripts/lint.sh" ]
 then
+    echo "ato_learning/scripts/lint.sh"
     ato_learning/scripts/lint.sh
 fi
 

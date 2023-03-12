@@ -30,7 +30,7 @@
     <limit lower="-2.26893" upper="2.26893" effort="1.0" velocity="1.0"/>
     <parent link="joint_1"/>
     <child link="bone_1"/>
-    <origin xyz="0 0 210" rpy="0 0 0"/>
+    <origin xyz="0 0 220" rpy="0 0 0"/>
   </joint>
 
   <link name="bone_1">
@@ -64,7 +64,7 @@
     <limit lower="-2.26893" upper="2.26893" effort="1.0" velocity="1.0"/>
     <parent link="joint_2"/>
     <child link="bone_2"/>
-    <origin xyz="0 0 210" rpy="0 0 0"/>
+    <origin xyz="0 0 220" rpy="0 0 0"/>
   </joint>
 
   <link name="bone_2">
@@ -98,7 +98,7 @@
     <limit lower="-2.26893" upper="2.26893" effort="1.0" velocity="1.0"/>
     <parent link="joint_3"/>
     <child link="bone_3"/>
-    <origin xyz="0 0 210" rpy="0 0 0"/>
+    <origin xyz="0 0 220" rpy="0 0 0"/>
   </joint>
 
   <link name="bone_3">

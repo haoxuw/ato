@@ -16,19 +16,34 @@ from control import arm_controller, motion
 from control.config_and_enums.controller_enums import SolverMode
 
 
+# moving arm with cached IK has two main benefits
+# 1. reduce computation delay, especially when running on device
+# 2. using BFS search from the home position makes sure not only the IK solution is viable in isolation,
+# but also reachable with minimal joints delta from the previous pose, tracing back to home pose
 class ArmControllerIkCache(arm_controller.ArmController):
     def __init__(
         self,
-        evaluation_depth=2,
-        segment_lengths=(210, (210) * 2, 147),
+        evaluation_depth=3,
+        grouped_segment_lengths=(
+            210,
+            (210) * 2,
+            147,
+        ),  # todo parse from arm_segments_config
         **kwargs,
     ):
         super().__init__(**kwargs)
         self.evaluation_depth = evaluation_depth
 
-        # segment_lengths = (base_link, (movable), gripper)
-        horizontal_reach = np.sum(segment_lengths[1]) + segment_lengths[2]
-        vertical_reach = segment_lengths[0] + horizontal_reach
+        # grouped_segment_lengths = (base_link_fixed_to_mount, (segment_1_movable ...), gripper)
+        grouped_segment_lengths = (
+            self._indexed_segment_lengths[0],
+            self._indexed_segment_lengths[1:-1],
+            self._indexed_segment_lengths[-1],
+        )
+        horizontal_reach = (
+            np.sum(grouped_segment_lengths[1]) + grouped_segment_lengths[2]
+        )
+        vertical_reach = grouped_segment_lengths[0] + horizontal_reach
         self.reach = (
             (-horizontal_reach, horizontal_reach),
             (-horizontal_reach, horizontal_reach),
@@ -36,15 +51,28 @@ class ArmControllerIkCache(arm_controller.ArmController):
         )  # although the real reach is a dome, we roughly define it as a rectangle
 
     @staticmethod
+    def __within_reach(target_xyz, reach):
+        return all(
+            axis_reach[0] <= target_axis_val <= axis_reach[1]
+            for target_axis_val, axis_reach in zip(target_xyz, reach)
+        )
+
+    @staticmethod
     # generate a dictionary of ik value dictionaries,
     # the first level key are depths
     # the second level key are discrete integer tuples, which maps into floating (x,y,z) by
     # tuple / 2^(depth) == (x,y,z)
     # this way we can (A) handle missing values (i.e. unreachable), (B) avoid using floating number as keys
-    def __evaluate_ik_cache(evaluation_depth, reach, multiple_initial_positions):
+    def __evaluate_ik_cache(
+        evaluation_depth,
+        reach,
+        multiple_initial_positions,
+        size=None,
+        forward_only=True,
+    ):
         ik_caches = {}
-        count = 0
-        evaluation_depth = 6  # todo
+        viable = 0
+        infeasible = 0
         unit = 2**evaluation_depth
 
         def to_fix_point(float_vector):
@@ -57,7 +85,12 @@ class ArmControllerIkCache(arm_controller.ArmController):
             )
             target_pose = target_positions.forward_kinematics_ikpy()
             xyz = to_fix_point(target_pose[:3])
-            target_rpy = to_fix_point(target_pose[3:6])
+            if forward_only:
+                target_rpy = to_fix_point(
+                    (-90, 0, 0)
+                )  # along positive Y, i.e. horizontal forward
+            else:
+                target_rpy = to_fix_point(target_pose[3:6])
             eval_queue = deque([(xyz, target_positions.actuator_positions)])
             while eval_queue:
                 xyz, current_positions = eval_queue.popleft()
@@ -68,50 +101,70 @@ class ArmControllerIkCache(arm_controller.ArmController):
                         (0, 0, direction),
                     ):
                         # solve for each of the 6 directions
-                        target_xyz = to_fix_point(
-                            np.array(xyz) + np.array(delta) * unit
-                        )
-                        # todo add reach
-                        if target_xyz in ik_cache:
-                            # if ik_cache[target_xyz] is not None:
+                        actual_delta = np.array(delta) * unit
+                        target_xyz = to_fix_point(np.array(xyz) + actual_delta)
+                        if not ArmControllerIkCache.__within_reach(
+                            target_xyz=target_xyz, reach=reach
+                        ):
                             continue
 
-                        if count % 1000 == 0:
-                            logging.info(f"Solving {count}th point: {target_xyz}")
-                        target_pose = np.concatenate([target_xyz, target_rpy])
-                        logging.info(
-                            f"Solving {count}th point: {target_xyz} {current_positions}"
-                        )
+                        if target_xyz in ik_cache:
+                            if ik_cache[target_xyz] is not None:
+                                continue
 
+                        target_pose = np.concatenate([target_xyz, target_rpy])
                         target_pose = motion.EndeffectorPose(pose=target_pose)
-                        (validated_positions, _,) = target_pose.inverse_kinematics_ikpy(
-                            solver_mode=SolverMode.ALL,
-                            # initial_joint_positions=current_positions,
-                        )
+                        if forward_only:  # forward only, faster
+                            (
+                                validated_positions,
+                                _,
+                            ) = target_pose.inverse_kinematics_ikpy(
+                                solver_mode=SolverMode.FORWARD,
+                                initial_joint_positions=current_positions,
+                            )
+                        else:
+                            (
+                                validated_positions,
+                                _,
+                            ) = target_pose.inverse_kinematics_ikpy(
+                                solver_mode=SolverMode.ALL,
+                                initial_joint_positions=current_positions,
+                            )
                         if validated_positions is not None:
                             actuator_positions = validated_positions[:-1]
                             ik_cache[target_xyz] = actuator_positions
                             eval_queue.append((target_xyz, actuator_positions))
-                            count += 1
+                            if viable % 100 == 0:
+                                # density is a rough estimation because some pose marked infeasible may be solved by other path
+                                logging.info(
+                                    f"Solved {viable}th point: {target_xyz} @ {actuator_positions} ~{round(viable / (viable+infeasible+1) * 100,2)}% density"
+                                )
+                            viable += 1
+                            if size is not None and size < viable:
+                                eval_queue = []
+                                break
                         else:
                             ik_cache[target_xyz] = None
-                            logging.info(
-                                f"Failed Solving {count}th point: {target_xyz}"
+                            infeasible += 1
+                            logging.debug(
+                                f"Failed Solving {viable}th point: {target_xyz}"
                             )
             ik_caches[target_rpy] = ik_cache
         logging.info(
-            f"Generated {count} data points, example ik_cache,\nX: \n{ik_caches}"
+            f"Generated {viable} data points, example ik_cache,\nX: \n{ik_caches}"
         )
         return ik_caches
 
     def generate_ik_cache(
         self,
         ik_cache_filepath_prefix="~/.ato/ik_cache",
+        size=None,
     ):
         ik_cache = ArmControllerIkCache.__evaluate_ik_cache(
             evaluation_depth=self.evaluation_depth,
             reach=self.reach,
             multiple_initial_positions=[self.home_positions],
+            size=size,
         )
         file_path = os.path.expanduser(f"{ik_cache_filepath_prefix}_ik_cache.npy")
         with open(file_path, "wb") as fout:

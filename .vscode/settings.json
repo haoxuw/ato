@@ -52,6 +52,7 @@
         "printoptions",
         "pulsewidth",
         "pyplot",
+        "pytest",
         "relu",
         "roslaunch",
         "rotvec",

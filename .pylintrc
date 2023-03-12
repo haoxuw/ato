@@ -7,6 +7,7 @@ disable=
     no-else-break,
     too-many-lines,
     too-many-locals,
+    too-many-nested-blocks,
     unused-argument,
     unnecessary-lambda,
     too-many-ancestors,
