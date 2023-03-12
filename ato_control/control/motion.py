@@ -22,6 +22,8 @@ import ikpy.chain
 import numpy as np
 from scipy.spatial.transform import Rotation
 
+from control.config_and_enums.controller_enums import SolverMode
+
 try:
     sys.path.append(f"{pathlib.Path(__file__).parent}/../../ato_learning/")
     # pylint: disable=import-error
@@ -317,8 +319,22 @@ class ActuatorPositions(Position):
             "endeffector_reference_frame": np.array(endeffector_reference_frame),
         }
 
+    # returns EndeffectorPose
     def forward_kinematics_ikpy(self):
-        return None
+        estimated_ee_pose_matrix_via_fk = (
+            EndeffectorPose.robot_chain.forward_kinematics(
+                [
+                    0,
+                    *np.radians(self.__actuator_positions),
+                ]  # base_link + active_joints
+            )
+        )
+        xyz = estimated_ee_pose_matrix_via_fk[:3, 3]
+        rpy = Rotation.from_matrix(estimated_ee_pose_matrix_via_fk[:3, :3]).as_euler(
+            "XYZ", degrees=False
+        )
+        actual_pose_vector = np.concatenate([xyz, rpy])
+        return actual_pose_vector
 
 
 class EndeffectorPose(Position):
@@ -419,6 +435,7 @@ class EndeffectorPose(Position):
         self,
         solver_mode,
         initial_joint_positions=None,  # excludes gripper, unlike current_actuator_positions which includes gripper
+        skip_validation=False,
     ):
         if initial_joint_positions is None:
             initial_position = None  # unknown initial_position
@@ -431,21 +448,21 @@ class EndeffectorPose(Position):
         ).as_matrix()
 
         # if align all, or only z or only pos
-        if solver_mode == "Forward":
+        if solver_mode == SolverMode.FORWARD:
             orientation_mode = "Z"
             target_orientation = [0, -1, 0]
-        elif solver_mode == "All":
+        elif solver_mode == SolverMode.ALL:
             orientation_mode = "all"  # convention keyword of ikpy
             # target_orientation = target_orientation
-        elif solver_mode == "Z":
+        elif solver_mode == SolverMode.Z:
             # to align with unit vector of z axis -- because gripper was pointing upwards at installation
             orientation_mode = "Z"
             target_orientation = target_orientation[2]
-        elif solver_mode == "none" or solver_mode is None:
+        elif solver_mode == SolverMode.NONE:
             orientation_mode = None
             target_orientation = None
         else:
-            raise Exception(f"Unexpected orientation_mode == {orientation_mode}")
+            raise Exception(f"Unexpected solver_mode == {solver_mode}")
 
         try:
             joint_positions = self.robot_chain.inverse_kinematics(
@@ -456,13 +473,20 @@ class EndeffectorPose(Position):
             )
         except Exception as e:
             logging.warning(f"Skipped IK for {orientation_mode}, exception: {e}")
-            return None
+            return None, None
 
         joint_positions = (
             joint_positions[1:7] * 180.0 / np.pi
         )  # [1:7] to remove base_link and gripper link
-        actuator_positions = np.append(joint_positions, self.gripper_position)
-        return actuator_positions
+        proposed_positions = np.append(joint_positions, self.gripper_position)
+
+        if not skip_validation:
+            validated_positions, actual_pose_vector = self.validate_ik_fk(
+                new_joint_positions_sent_to_hardware=proposed_positions
+            )
+            return validated_positions, actual_pose_vector
+        else:
+            return proposed_positions, None
 
     def validate_ik_fk(
         self,
@@ -473,41 +497,34 @@ class EndeffectorPose(Position):
         },
         use_ikpy=False,
     ):
-        if new_joint_positions_sent_to_hardware is None:
-            return False, None
         if use_ikpy:
-            estimated_ee_pose_matrix_via_fk = self.robot_chain.forward_kinematics(
-                [
-                    0,
-                    *np.radians(new_joint_positions_sent_to_hardware),
-                ]  # base_link + active_joints
-            )
-            logging.error(estimated_ee_pose_matrix_via_fk)
-            xyz = estimated_ee_pose_matrix_via_fk[:3, 3]
-            rpy = Rotation.from_matrix(
-                estimated_ee_pose_matrix_via_fk[:3, :3]
-            ).as_euler("XYZ", degrees=False)
-            actual_pose_vector = np.concatenate([xyz, rpy])
-        else:
+            estimated_ee_pose_vector = ActuatorPositions(
+                positions=new_joint_positions_sent_to_hardware
+            ).forward_kinematics_ikpy()
+            logging.error(estimated_ee_pose_vector)
+        if True:
             estimated_ee_pose = ActuatorPositions(
                 positions=new_joint_positions_sent_to_hardware
             ).forward_kinematics_math_based()
-            actual_pose_vector = estimated_ee_pose["endeffector_pose_intrinsic"]
+            estimated_ee_pose_vector = estimated_ee_pose["endeffector_pose_intrinsic"]
+            logging.warning(estimated_ee_pose_vector)
 
         intended_pose_vector = self.pose
-        return (
-            np.allclose(
-                a=intended_pose_vector[:3],
-                b=actual_pose_vector[:3],
-                rtol=tolerance["xyz_atol"],
-            )
-            and np.allclose(
-                a=intended_pose_vector[3:6],
-                b=actual_pose_vector[3:6],
-                rtol=tolerance["rpy_atol"],
-            ),
-            actual_pose_vector,
+        xyz_validated = np.allclose(
+            a=intended_pose_vector[:3],
+            b=estimated_ee_pose_vector[:3],
+            rtol=tolerance["xyz_atol"],
         )
+        rpy_validated = np.allclose(
+            a=intended_pose_vector[3:6],
+            b=estimated_ee_pose_vector[3:6],
+            rtol=tolerance["rpy_atol"],
+        )
+        if xyz_validated and rpy_validated:
+            validated_positions = new_joint_positions_sent_to_hardware
+        else:
+            validated_positions = None
+        return validated_positions, estimated_ee_pose_vector
 
     @staticmethod
     # Credits to ChatGPT. When asked:
@@ -683,7 +700,7 @@ class TrajectoryEndeffectorPose(Trajectory):
         for index in range(1, len(self.trajectory)):
             timestamp, new_pose = self.trajectory[index]
             new_pose: EndeffectorPose
-            new_positions = new_pose.inverse_kinematics_ikpy(
+            new_positions, _ = new_pose.inverse_kinematics_ikpy(
                 initial_joint_positions=current_positions[:-1],
             )
             if new_positions is None:

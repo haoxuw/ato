@@ -9,7 +9,7 @@
 # See more details in the LICENSE folder.
 import logging
 import os
-
+from collections import deque
 import numpy as np
 from control import arm_controller, motion
 
@@ -46,12 +46,37 @@ class ArmControllerIkCache(arm_controller.ArmController):
     # the second level key are discrete integer tuples, which maps into floating (x,y,z) by
     # tuple / 2^(depth) == (x,y,z)
     # this way we can (A) handle missing values (i.e. unreachable), (B) avoid using floating number as keys
-    def __evaluate_ik_cache(evaluation_depth, reach):
+    def __evaluate_ik_cache(evaluation_depth, reach, multiple_initial_positions):
         ik_caches = {}
         count = 0
         unit = 2**evaluation_depth
-        for orientation in [0]:  # todo
+        logging.error(unit)
+
+        def to_fix_point(float_vector):
+            return tuple(round(float(val), 2) for val in float_vector)
+
+        for target_positions_vector in [
+            multiple_initial_positions
+        ]:  # todo: may add more
             ik_cache = {}
+            target_positions = motion.ActuatorPositions(
+                positions=target_positions_vector
+            )
+            target_pose = target_positions.forward_kinematics_ikpy()
+            xyz = to_fix_point(target_pose.xyz)
+            rpy = to_fix_point(target_pose.rpy)
+            eval_queue = deque([(xyz, target_positions)])
+            while eval_queue:
+                xyz, position = eval_queue.popleft()
+                for direction in (-1, 1):
+                    for delta in (
+                        (direction, 0, 0),
+                        (0, direction, 0),
+                        (0, 0, direction),
+                    ):
+                        # solve for each of the 6 directions
+                        target_xyz = np.array(xyz) + np.array(delta) * unit
+                        pass
             for x_quantized in ArmControllerIkCache.__get_range(reach, 0, unit):
                 logging.info(
                     f"Solving {count}th point: {float(x_quantized)} * {unit} == {float(x_quantized) * unit}, {(x_quantized * unit - reach[0][0]) / (reach[0][1] - reach[0][0]) * 100}%"
@@ -68,8 +93,8 @@ class ArmControllerIkCache(arm_controller.ArmController):
                                 0,
                             ]
                         )
-                        target_positions = target_pose.inverse_kinematics_ikpy(
-                            initial_joint_positions=None,  # todo
+                        target_positions, _ = target_pose.inverse_kinematics_ikpy(
+                            initial_joint_positions=None,
                             solver_mode="Forward",
                         )
                         if target_positions is not None:
@@ -77,7 +102,7 @@ class ArmControllerIkCache(arm_controller.ArmController):
                                 pos for pos in target_positions
                             )
                             count += 1
-            ik_caches[orientation] = ik_cache
+        ik_caches[rpy] = ik_cache
         logging.info(
             f"Generated {count} data points, example ik_cache,\nX: \n{ik_caches}"
         )
@@ -88,7 +113,9 @@ class ArmControllerIkCache(arm_controller.ArmController):
         ik_cache_filepath_prefix="~/.ato/ik_cache",
     ):
         ik_cache = ArmControllerIkCache.__evaluate_ik_cache(
-            evaluation_depth=self.evaluation_depth, reach=self.reach
+            evaluation_depth=self.evaluation_depth,
+            reach=self.reach,
+            multiple_initial_positions=[self.home_positions],
         )
         file_path = os.path.expanduser(f"{ik_cache_filepath_prefix}_ik_cache.npy")
         with open(file_path, "wb") as fout:
