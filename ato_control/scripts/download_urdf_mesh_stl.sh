@@ -9,6 +9,6 @@
 # MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.
 # See more details in the LICENSE folder.
 
-wget https://github.com/haoxuw/ato/blob/master-resources/urdf_mesh/BoneAugmented_urdf_mesh.stl -O /tmp/BoneAugmented_urdf_mesh.stl
-wget https://github.com/haoxuw/ato/blob/master-resources/urdf_mesh/JointAugmented_urdf_mesh.stl -O /tmp/JointAugmented_urdf_mesh.stl
-wget https://github.com/haoxuw/ato/blob/master-resources/urdf_mesh/GripperDragonWithServo_urdf_mesh.stl -O /tmp/GripperDragonWithServo_urdf_mesh.stl
+wget https://printable-mesh.s3.us-east-2.amazonaws.com/master/BoneAugmented_urdf_mesh.stl -O /tmp/BoneAugmented_urdf_mesh.stl
+wget https://printable-mesh.s3.us-east-2.amazonaws.com/master/JointAugmented_urdf_mesh.stl -O /tmp/JointAugmented_urdf_mesh.stl
+wget https://printable-mesh.s3.us-east-2.amazonaws.com/master/GripperDragonWithServo_urdf_mesh.stl -O /tmp/GripperDragonWithServo_urdf_mesh.stl

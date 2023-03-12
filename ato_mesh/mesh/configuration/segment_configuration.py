@@ -165,9 +165,9 @@ class StructuralConfigsSi270(StructuralConfigsSi180):
     ) -> None:
         super().__init__(bone_length, roll_bone_holder_type)
 
-    JointLength: float = 120
+    JointLength: float = 130
     PitchRange: float = 270
-    MotorTopLocation: float = 80
+    MotorTopLocation: float = 90
     BoltOffsetCoefficientX: float = 1.58  # less is outwards
     BoltOffsetCoefficientZTop: float = 1.64  # less is upwards
     BoltOffsetCoefficientZDown: float = 1.74  # less is downwards
