@@ -16,6 +16,9 @@ This package uses the following components to implement control flow of the arm
 #### To start arm controller to interface with RaspberryPI (RPI), with joystick at /dev/input/js0 (-j 0)
 > $ sudo pigpiod && ./ato_control/scripts/activate_arm.sh -j 0
 
+#### Performance and sanity testing
+> $ cd ./ato_control && python -m pytest tests/ --profile-svg -k test_generate_ik_cache -v -s
+
 #### If you have ros installed, you can examine the URDF models by
 
 > $ sudo apt-get install libatlas-base-dev -y

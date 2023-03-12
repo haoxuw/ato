@@ -63,7 +63,7 @@ class ServoConnectionConfig:
 
 # this object defines the particular arm config that I happen to be using now
 # Copied from the StructuralConfigsSi's configuration
-SegmentLength = 210
+SegmentLength = 220
 GripperLength = 147
 # servo_max_position should be configured according to which flavor of the arm was assembled
 arm_segments_config = {

@@ -86,7 +86,6 @@ def create_arm_controller_obj(args, for_training=False, generate_ik_cache=0):
         )
     elif generate_ik_cache > 0:
         arm_ctl = arm_controller_ik_cache.ArmControllerIkCache(
-            segment_lengths=(210, (210) * 2, 147),
             pi_obj=pi,
             joystick_obj=joystick,
             arm_segments_config=arm_segments_config,

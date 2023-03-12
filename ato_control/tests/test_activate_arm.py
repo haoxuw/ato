@@ -12,7 +12,12 @@ import logging
 import time
 
 import numpy as np
-from control import arm_controller_joystick, ps4_joystick, raspberry_pi
+from control import (
+    arm_controller_ik_cache,
+    arm_controller_joystick,
+    ps4_joystick,
+    raspberry_pi,
+)
 from control.config_and_enums.arm_connection_config import arm_segments_config
 
 
@@ -27,6 +32,20 @@ def test_component_obj_creation():
         arm_segments_config=arm_segments_config,
     )
     assert arm_ctl.ready is True
+
+
+def test_generate_ik_cache():
+    pi = raspberry_pi.RaspberryPi()
+    joystick = ps4_joystick.Ps4Joystick(interface=f"/dev/input/js0")
+
+    arm_ctl = arm_controller_ik_cache.ArmControllerIkCache(
+        pi_obj=pi,
+        joystick_obj=joystick,
+        arm_segments_config=arm_segments_config,
+    )
+    arm_ctl.generate_ik_cache(
+        ik_cache_filepath_prefix="~/.ato/ik_cache_pytest", size=200
+    )
 
 
 def test_move_L3():
