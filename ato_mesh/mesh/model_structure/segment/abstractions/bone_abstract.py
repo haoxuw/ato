@@ -75,23 +75,25 @@ class BonePitchAbstract(cq_mesh.CqMesh):
                 .translate((-pitch_wheel_space_radius, 0, 0))
             )
         elif self.segment_configs.structural.PitchRange == 180:
-            bone_pitch_space = cq.Workplane(self.workplane_primary).box(
-                pitch_wheel_space_radius * 2,
-                self.segment_configs.structural.Far,
-                pitch_wheel_space_radius * 2
-                + self.segment_configs.structural.PitchBoneMeshNetLength,
+            bone_pitch_space = (
+                cq.Workplane(self.workplane_primary)
+                .box(
+                    pitch_wheel_space_radius * 2,
+                    self.segment_configs.structural.Far,
+                    pitch_wheel_space_radius * 2
+                    + self.segment_configs.structural.PitchBoneMeshNetLength,
+                )
+                .translate(
+                    (0, 0, -self.segment_configs.structural.PitchBoneMeshNetLength / 2)
+                )
             )
         else:
             raise Exception(
                 f"Unsupported pitch range {self.segment_configs.structural.PitchRange}"
             )
-        pitch_offset = (
-            0,
-            0,
-            self.segment_configs.structural.PitchCenterLocationZ
-            - self.segment_configs.structural.PitchBoneMeshNetLength / 2,
+        bone_pitch_space = bone_pitch_space.translate(
+            (0, 0, self.segment_configs.structural.PitchCenterLocationZ)
         )
-        bone_pitch_space = bone_pitch_space.translate(pitch_offset)
 
         return mesh.add(bone_pitch_space)
 

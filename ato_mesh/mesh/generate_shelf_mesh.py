@@ -232,15 +232,12 @@ def add_models(cq_meshes, args):
         ]
     if args.all or args.parts:
         cq_meshes += [
-            bone_augmented.BoneAugmented(segment_configs=segment_configs),
             bone_separable.BoneSeparable(segment_configs=segment_configs),
-            joint_augmented.JointAugmented(segment_configs=segment_configs),
             joint_augmented.JointAugmentedPos(segment_configs=segment_configs),
             joint_augmented.JointAugmentedNeg(segment_configs=segment_configs),
         ]
     if args.all or args.bone:
         cq_meshes += [
-            bone_augmented.BoneAugmented(segment_configs=segment_configs),
             bone_separable.BoneSeparable(segment_configs=segment_configs),
             bone_separable_vertical.BoneSeparableVertical(
                 segment_configs=segment_configs
@@ -307,9 +304,8 @@ def add_models(cq_meshes, args):
     if args.all or not args.no_default:
         cq_meshes += [
             segment_augmented.SegmentAugmented(segment_configs=segment_configs),
-            bone_separable_vertical.BoneSeparableVertical(
-                segment_configs=segment_configs
-            ),
+            joint_augmented.JointAugmented(segment_configs=segment_configs),
+            bone_augmented.BoneAugmented(segment_configs=segment_configs),
             gripper_dragon_with_servo.GripperDragonWithServo(
                 segment_configs=segment_configs
             ),
