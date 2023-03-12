@@ -12,11 +12,8 @@ import logging
 import threading
 
 import control
-from control.config_and_enums.joystick_input_types import (
-    Button,
-    JoystickAxis,
-)
-from control.config_and_enums.controller_enums import SolverMode, ControllerStates
+from control.config_and_enums.controller_enums import ControllerStates
+from control.config_and_enums.joystick_input_types import Button, JoystickAxis
 from control.interface_classes import input_device_interface
 from pyPS4Controller.controller import Controller
 

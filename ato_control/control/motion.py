@@ -20,9 +20,8 @@ from typing import List, Tuple
 
 import ikpy.chain
 import numpy as np
-from scipy.spatial.transform import Rotation
-
 from control.config_and_enums.controller_enums import SolverMode
+from scipy.spatial.transform import Rotation
 
 try:
     sys.path.append(f"{pathlib.Path(__file__).parent}/../../ato_learning/")
