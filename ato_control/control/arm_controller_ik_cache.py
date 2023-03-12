@@ -10,8 +10,10 @@
 import logging
 import os
 from collections import deque
+
 import numpy as np
 from control import arm_controller, motion
+from control.config_and_enums.controller_enums import SolverMode
 
 
 class ArmControllerIkCache(arm_controller.ArmController):
@@ -34,13 +36,6 @@ class ArmControllerIkCache(arm_controller.ArmController):
         )  # although the real reach is a dome, we roughly define it as a rectangle
 
     @staticmethod
-    def __get_range(reach, index, unit):
-        low, high = int(reach[index][0] / unit), int(reach[index][1] / unit + 1)
-        assert low < high, (low, high)
-        for val in range(low, high):
-            yield val
-
-    @staticmethod
     # generate a dictionary of ik value dictionaries,
     # the first level key are depths
     # the second level key are discrete integer tuples, which maps into floating (x,y,z) by
@@ -49,25 +44,23 @@ class ArmControllerIkCache(arm_controller.ArmController):
     def __evaluate_ik_cache(evaluation_depth, reach, multiple_initial_positions):
         ik_caches = {}
         count = 0
+        evaluation_depth = 6  # todo
         unit = 2**evaluation_depth
-        logging.error(unit)
 
         def to_fix_point(float_vector):
             return tuple(round(float(val), 2) for val in float_vector)
 
-        for target_positions_vector in [
-            multiple_initial_positions
-        ]:  # todo: may add more
+        for target_positions_vector in multiple_initial_positions:  # todo: may add more
             ik_cache = {}
             target_positions = motion.ActuatorPositions(
                 positions=target_positions_vector
             )
             target_pose = target_positions.forward_kinematics_ikpy()
-            xyz = to_fix_point(target_pose.xyz)
-            rpy = to_fix_point(target_pose.rpy)
-            eval_queue = deque([(xyz, target_positions)])
+            xyz = to_fix_point(target_pose[:3])
+            target_rpy = to_fix_point(target_pose[3:6])
+            eval_queue = deque([(xyz, target_positions.actuator_positions)])
             while eval_queue:
-                xyz, position = eval_queue.popleft()
+                xyz, current_positions = eval_queue.popleft()
                 for direction in (-1, 1):
                     for delta in (
                         (direction, 0, 0),
@@ -75,34 +68,37 @@ class ArmControllerIkCache(arm_controller.ArmController):
                         (0, 0, direction),
                     ):
                         # solve for each of the 6 directions
-                        target_xyz = np.array(xyz) + np.array(delta) * unit
-                        pass
-            for x_quantized in ArmControllerIkCache.__get_range(reach, 0, unit):
-                logging.info(
-                    f"Solving {count}th point: {float(x_quantized)} * {unit} == {float(x_quantized) * unit}, {(x_quantized * unit - reach[0][0]) / (reach[0][1] - reach[0][0]) * 100}%"
-                )
-                for y_quantized in ArmControllerIkCache.__get_range(reach, 1, unit):
-                    for z_quantized in ArmControllerIkCache.__get_range(reach, 2, unit):
-                        target_pose = motion.EndeffectorPose(
-                            pose=[
-                                x_quantized * unit,
-                                y_quantized * unit,
-                                z_quantized * unit,
-                                0,
-                                0,
-                                0,
-                            ]
+                        target_xyz = to_fix_point(
+                            np.array(xyz) + np.array(delta) * unit
                         )
-                        target_positions, _ = target_pose.inverse_kinematics_ikpy(
-                            initial_joint_positions=None,
-                            solver_mode="Forward",
+                        # todo add reach
+                        if target_xyz in ik_cache:
+                            # if ik_cache[target_xyz] is not None:
+                            continue
+
+                        if count % 1000 == 0:
+                            logging.info(f"Solving {count}th point: {target_xyz}")
+                        target_pose = np.concatenate([target_xyz, target_rpy])
+                        logging.info(
+                            f"Solving {count}th point: {target_xyz} {current_positions}"
                         )
-                        if target_positions is not None:
-                            ik_cache[(x_quantized, y_quantized, z_quantized)] = tuple(
-                                pos for pos in target_positions
-                            )
+
+                        target_pose = motion.EndeffectorPose(pose=target_pose)
+                        (validated_positions, _,) = target_pose.inverse_kinematics_ikpy(
+                            solver_mode=SolverMode.ALL,
+                            # initial_joint_positions=current_positions,
+                        )
+                        if validated_positions is not None:
+                            actuator_positions = validated_positions[:-1]
+                            ik_cache[target_xyz] = actuator_positions
+                            eval_queue.append((target_xyz, actuator_positions))
                             count += 1
-        ik_caches[rpy] = ik_cache
+                        else:
+                            ik_cache[target_xyz] = None
+                            logging.info(
+                                f"Failed Solving {count}th point: {target_xyz}"
+                            )
+            ik_caches[target_rpy] = ik_cache
         logging.info(
             f"Generated {count} data points, example ik_cache,\nX: \n{ik_caches}"
         )
