@@ -86,10 +86,10 @@ class Singletons:
 
 class ActuatorPositions(Position):
     # e.g. when actuator_indices_mapping = ((0,1), (4,5)), it means:
-    # self.__actuator_positions[0] is roll of the 1st segment
-    # self.__actuator_positions[1] is pitch of the 1st segment
-    # self.__actuator_positions[4] is roll of the 2nd segment
-    # self.__actuator_positions[5] is pitch of the 2nd segment
+    # self.__joint_positions[0] is roll of the 1st segment
+    # self.__joint_positions[1] is pitch of the 1st segment
+    # self.__joint_positions[4] is roll of the 2nd segment
+    # self.__joint_positions[5] is pitch of the 2nd segment
     actuator_indices_mapping = None
 
     # e.g. when arm_segment_lengths = (30, 60), it means:
@@ -98,10 +98,18 @@ class ActuatorPositions(Position):
 
     rotation_ranges = None
 
-    def __init__(self, positions, gripper_position=None) -> None:
-        if gripper_position is not None:
-            positions = np.append(positions, gripper_position)
-        self.set(sequence=positions)
+    def __init__(
+        self, actuator_positions=None, joint_positions=None, gripper_position=None
+    ) -> None:
+        if actuator_positions is not None:
+            assert joint_positions is None
+            assert gripper_position is None
+            self.set(sequence=actuator_positions[:-1])
+            self.__gripper_position = actuator_positions[-1]
+        else:
+            assert joint_positions is not None
+            self.set(sequence=joint_positions)
+            self.__gripper_position = gripper_position
 
     @classmethod
     def is_ready(cls):
@@ -121,17 +129,16 @@ class ActuatorPositions(Position):
         ] = val
 
     @property
-    def positions(self):
-        return self.__actuator_positions
-
-    # todo rename to joint_positions
-    @property
     def actuator_positions(self):
-        return self.__actuator_positions[:-1]
+        return np.append(self.__joint_positions, self.__gripper_position)
+
+    @property
+    def joint_positions(self):
+        return self.__joint_positions
 
     @property
     def gripper_position(self):
-        return self.__actuator_positions[-1]
+        return self.__gripper_position
 
     @classmethod
     def set_actuator_indices_mapping(cls, actuator_indices_mapping):
@@ -186,27 +193,27 @@ class ActuatorPositions(Position):
 
     def set(self, sequence):
         self._verify_sequence_valid(
-            sequence=sequence, shape=(len(self.__class__.arm_segment_lengths) * 2 + 1,)
+            sequence=sequence, shape=(len(self.__class__.arm_segment_lengths) * 2,)
         )
-        self.__actuator_positions = np.array(sequence)
+        self.__joint_positions = np.array(sequence)
 
     def to_tuple(self):
-        return tuple(val for val in self.__actuator_positions)
+        return tuple(val for val in self.actuator_positions)
 
     def to_np(self):
-        return self.__actuator_positions
+        return self.actuator_positions
 
     def to_serializable(self):
         return self.to_tuple()
 
     def __len__(self):
-        return len(self.__actuator_positions)
+        return len(self.actuator_positions)
 
     def __str__(self) -> str:
-        return f"@{self.positions}"
+        return f"@{self.actuator_positions}"
 
     def info_str(self) -> str:
-        return f"actuator @{self.positions}" + (
+        return f"actuator @{self.actuator_positions}" + (
             f" segment_actuator_indices: { self.__class__.actuator_indices_mapping} gripper_index_mapping: { self.__class__.gripper_index_mapping}"
             if self.__class__.actuator_indices_mapping is not None
             else ""
@@ -216,8 +223,8 @@ class ActuatorPositions(Position):
     # and another base on math.
     # finally a feature rich implementation from the ikpy package
     def forward_kinematics_ml_based(self):
-        actuator_positions = np.array(self.positions[:6], dtype=np.float32)
-        features = ActuatorPositions.normalize_to_relu6(sequence=actuator_positions)
+        joint_positions = np.array(self.joint_positions, dtype=np.float32)
+        features = ActuatorPositions.normalize_to_relu6(sequence=joint_positions)
         return Singletons.get_forward_kinematics_model().inference_one(
             features=features
         )
@@ -229,13 +236,13 @@ class ActuatorPositions(Position):
         assert (
             self.__class__.arm_segment_lengths is not None
         ), self.__class__.arm_segment_lengths
-        actuator_positions = np.array(self.__actuator_positions)
+        joint_positions = np.array(self.__joint_positions)
         rotation_sequence = np.array(
             [
                 (
-                    actuator_positions[segment_index[1]],
+                    joint_positions[segment_index[1]],
                     0,
-                    actuator_positions[segment_index[0]],
+                    joint_positions[segment_index[0]],
                 )
                 for segment_index in self.__class__.actuator_indices_mapping
             ]
@@ -326,8 +333,9 @@ class ActuatorPositions(Position):
             EndeffectorPose.robot_chain.forward_kinematics(
                 [
                     0,
-                    *np.radians(self.__actuator_positions),
-                ]  # base_link + active_joints
+                    *np.radians(self.__joint_positions),
+                    0,
+                ]  # base_link + active_joints + dummy_gripper
             )
         )
         xyz = estimated_ee_pose_matrix_via_fk[:3, 3]
@@ -335,14 +343,16 @@ class ActuatorPositions(Position):
             "XYZ", degrees=True
         )
         actual_pose_vector = np.concatenate([xyz, rpy])
-        return actual_pose_vector
+        return EndeffectorPose(
+            pose=actual_pose_vector, gripper_position=self.gripper_position
+        )
 
 
 class EndeffectorPose(Position):
     robot_chain = None
 
     def __init__(self, pose, gripper_position=0) -> None:
-        self.__pose = pose
+        self.set(sequence=pose)
         self.__gripper_position = gripper_position
 
     @property
@@ -385,11 +395,9 @@ class EndeffectorPose(Position):
     def pose(self):
         return self.__pose
 
-    def set(self, sequence, gripper_position=None):
+    def set(self, sequence):
         self._verify_sequence_valid(sequence=sequence, shape=(6,))
         self.__pose = np.array(sequence)
-        if gripper_position:
-            self.__gripper_position = gripper_position
 
     def set_xyz(self, sequence):
         self._verify_sequence_valid(sequence=sequence, shape=(3,))
@@ -447,7 +455,7 @@ class EndeffectorPose(Position):
     def inverse_kinematics_ikpy(
         self,
         solver_mode,
-        initial_joint_positions=None,  # excludes gripper, unlike current_actuator_positions which includes gripper
+        initial_joint_positions=None,  # excludes gripper position
         skip_validation=False,
     ):
         if initial_joint_positions is None:
@@ -491,15 +499,17 @@ class EndeffectorPose(Position):
         joint_positions = (
             joint_positions[1:7] * 180.0 / np.pi
         )  # [1:7] to remove base_link and gripper link
-        proposed_positions = np.append(joint_positions, self.gripper_position)
 
         if not skip_validation:
-            validated_positions, actual_pose_vector = self.validate_ik_fk(
-                new_joint_positions_sent_to_hardware=proposed_positions
+            joint_positions, _ = self.validate_ik_fk(
+                new_joint_positions_sent_to_hardware=joint_positions
             )
-            return validated_positions, actual_pose_vector
+        if joint_positions is None:
+            return None
         else:
-            return proposed_positions, None
+            return ActuatorPositions(
+                joint_positions=joint_positions, gripper_position=self.gripper_position
+            )
 
     def validate_ik_fk(
         self,
@@ -511,12 +521,14 @@ class EndeffectorPose(Position):
         use_ikpy=True,
     ):
         if use_ikpy:
-            estimated_ee_pose_vector = ActuatorPositions(
-                positions=new_joint_positions_sent_to_hardware
-            ).forward_kinematics_ikpy()
+            estimated_ee_pose_vector = (
+                ActuatorPositions(joint_positions=new_joint_positions_sent_to_hardware)
+                .forward_kinematics_ikpy()
+                .pose
+            )
         else:
             estimated_ee_pose = ActuatorPositions(
-                positions=new_joint_positions_sent_to_hardware
+                joint_positions=new_joint_positions_sent_to_hardware
             ).forward_kinematics_math_based()
             estimated_ee_pose_vector = estimated_ee_pose["endeffector_pose_intrinsic"]
 
@@ -578,16 +590,11 @@ class EndeffectorPose(Position):
 
     def inverse_kinematics_cached(self, orientation=SolverMode.FORWARD):
         if orientation == SolverMode.FORWARD:
-            initial_xyz, initial_positions, ik_cache = self.ik_caches[  # todo add unit
+            unit, initial_xyz, initial_positions, ik_cache = self.ik_caches[
                 list(self.ik_caches.keys())[0]
             ]  # todo, not hard code
         else:
             raise Exception(f"Not supported {orientation}")
-        # todo remove
-        initial_xyz = initial_xyz[:3]
-        initial_positions = initial_positions[:6]
-        unit = 8
-        #########
 
         xyz_relative = self.xyz - np.array(
             initial_xyz
@@ -615,10 +622,13 @@ class EndeffectorPose(Position):
             total_weighted_positions += ik_cache[xyz_key] * distance
             total_weight += distance
 
-        target_positions = total_weighted_positions / total_weight
-        return ActuatorPositions(
-            positions=target_positions, gripper_position=self.gripper_position
-        )
+        if total_weight == 0:
+            return None
+        else:
+            target_positions = total_weighted_positions / total_weight
+            return ActuatorPositions(
+                joint_positions=target_positions, gripper_position=self.gripper_position
+            )
 
     @staticmethod
     def to_fix_point(float_vector):
@@ -755,7 +765,7 @@ class TrajectoryEndeffectorPose(Trajectory):
         assert starting_positions is not None
 
         actuator_positions_trajectory = TrajectoryActuatorPositions()
-        current_positions = np.array(starting_positions.positions)
+        current_positions = np.array(starting_positions.joint_positions)
         for index in range(1, len(self.trajectory)):
             timestamp, new_pose = self.trajectory[index]
             new_pose: EndeffectorPose
@@ -766,7 +776,7 @@ class TrajectoryEndeffectorPose(Trajectory):
                 continue
             actuator_positions_trajectory.append(
                 timestamp=timestamp,
-                positions=ActuatorPositions(positions=new_positions),
+                positions=ActuatorPositions(joint_positions=new_positions),
             )
             current_positions = new_positions
         return actuator_positions_trajectory
