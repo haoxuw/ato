@@ -20,8 +20,9 @@ class ArmControllerMlTraining(arm_controller.ArmController):
         if index is not None and size is not None and (index - 1) % 10000 == 0:
             logging.info(f"Processed {index//1000}k ({int(100.0 * index / size)}%)")
         return motion.ActuatorPositions(
-            positions=actuator_positions
-        ).forward_kinematics()["endeffector_pose_intrinsic"]
+            joint_positions=actuator_positions[:-1],
+            gripper_position=actuator_positions[-1],
+        ).forward_kinematics_math_based()["endeffector_pose_intrinsic"]
 
     def __generate_training_data_forward_kinematics(
         self,
@@ -40,7 +41,9 @@ class ArmControllerMlTraining(arm_controller.ArmController):
         matching_endeffector_pose_intrinsic = np.array(
             [
                 self.__get_endeffector_pose_intrinsic(
-                    actuator_positions=self._denormalize_relu6(relu6_val),
+                    actuator_positions=motion.ActuatorPositions.denormalize_relu6(
+                        relu6_val
+                    ),
                     index=index,
                     size=size,
                 )
@@ -83,8 +86,10 @@ class ArmControllerMlTraining(arm_controller.ArmController):
                 high=noise_range_in_degrees[1],
                 size=len(current_actuator_positions_relu6),
             )
-            current_actuator_positions_degrees = self._denormalize_relu6(
-                current_actuator_positions_relu6
+            current_actuator_positions_degrees = (
+                motion.ActuatorPositions.denormalize_relu6(
+                    current_actuator_positions_relu6
+                )
             )
             current_endeffector_pose_intrinsic = self.__get_endeffector_pose_intrinsic(
                 current_actuator_positions_degrees,

@@ -24,7 +24,7 @@ from control.config_and_enums.controller_enums import SolverMode
 class ArmControllerIkCache(arm_controller.ArmController):
     def __init__(
         self,
-        evaluation_depth=3,
+        evaluation_depth=7,
         forward_only=True,  # todo parse from arm_segments_config
         **kwargs,
     ):
@@ -59,15 +59,13 @@ class ArmControllerIkCache(arm_controller.ArmController):
     def __solve_target_pose(target_pose, current_positions, forward_only):
         target_pose = motion.EndeffectorPose(pose=target_pose)
         if forward_only:  # forward only, faster
-            (validated_positions, _,) = target_pose.inverse_kinematics_ikpy(
-                solver_mode=SolverMode.FORWARD,
-                initial_joint_positions=current_positions,
-            )
+            solver_mode = SolverMode.FORWARD
         else:
-            (validated_positions, _,) = target_pose.inverse_kinematics_ikpy(
-                solver_mode=SolverMode.ALL,
-                initial_joint_positions=current_positions,
-            )
+            solver_mode = SolverMode.ALL
+        validated_positions = target_pose.inverse_kinematics_ikpy(
+            solver_mode=solver_mode,
+            initial_joint_positions=current_positions,
+        )
         return validated_positions
 
     @staticmethod
@@ -93,9 +91,9 @@ class ArmControllerIkCache(arm_controller.ArmController):
         ) in multiple_initial_positions:  # todo: may add more
             ik_cache = {}
             initial_positions = motion.ActuatorPositions(
-                positions=initial_positions_vector
+                joint_positions=initial_positions_vector
             )
-            initial_pose_vector = initial_positions.forward_kinematics_ikpy()
+            initial_pose_vector = initial_positions.forward_kinematics_ikpy().pose
             initial_xyz = motion.EndeffectorPose.to_fix_point(initial_pose_vector[:3])
             if forward_only:
                 target_rpy = motion.EndeffectorPose.to_fix_point(
@@ -105,7 +103,7 @@ class ArmControllerIkCache(arm_controller.ArmController):
                 target_rpy = motion.EndeffectorPose.to_fix_point(
                     initial_pose_vector[3:6]
                 )
-            eval_queue = deque([(initial_xyz, initial_positions.actuator_positions)])
+            eval_queue = deque([(initial_xyz, initial_positions.joint_positions)])
             # todo, consider making multi threaded bfs
             while eval_queue:
                 xyz, current_positions = eval_queue.popleft()
@@ -134,16 +132,15 @@ class ArmControllerIkCache(arm_controller.ArmController):
                             target_pose=target_pose,
                             current_positions=current_positions,
                             forward_only=forward_only,
-                        )
+                        ).joint_positions
 
                         if validated_positions is not None:
-                            actuator_positions = validated_positions[:-1]  # gripper
-                            ik_cache[target_xyz] = actuator_positions
-                            eval_queue.append((target_xyz, actuator_positions))
+                            ik_cache[target_xyz] = validated_positions
+                            eval_queue.append((target_xyz, validated_positions))
                             if viable % 100 == 0:
                                 # density is a rough estimation because some pose marked infeasible may be solved by other path
                                 logging.info(
-                                    f"Solved {viable}th point: {target_xyz} @ {actuator_positions} ~{round(viable / (viable+infeasible+1) * 100,2)}% density"
+                                    f"Solved {viable}th point: {target_xyz} @ {validated_positions} ~{round(viable / (viable+infeasible+1) * 100,2)}% density"
                                 )
                             viable += 1
                             if size is not None and size < viable:

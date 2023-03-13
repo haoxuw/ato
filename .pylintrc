@@ -1,7 +1,6 @@
 [MESSAGES CONTROL]
 disable=
     useless-parent-delegation,
-    broad-exception-raised,
     wrong-import-order,
     dangerous-default-value,
     no-else-break,

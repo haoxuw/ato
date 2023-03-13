@@ -244,10 +244,10 @@ class ArmController:
 
                 # payload_positions
                 actuator_positions = motion.ActuatorPositions(
-                    positions=arm_config["payload_positions"]
+                    actuator_positions=arm_config["payload_positions"]
                 )
                 self.__move_servos_by_joint_space(
-                    joint_positions=actuator_positions.positions
+                    joint_positions=actuator_positions.actuator_positions
                 )
                 self.__do_internal_updates_for_current_actuator_positions()
 
@@ -257,7 +257,9 @@ class ArmController:
                     for timestamp, positions in arm_config["saved_trajectory"]:
                         self.__trajectory_saved.append(
                             timestamp=timestamp,
-                            positions=motion.ActuatorPositions(positions=positions),
+                            positions=motion.ActuatorPositions(
+                                actuator_positions=positions
+                            ),
                         )
         except Exception as e:
             logging.warning(f"Failed to load servos position, exception: {e}")
@@ -320,19 +322,16 @@ class ArmController:
         for solver_mode in self.__solver_priorities:
             if self._use_cached_ik:
                 assert self.ik_cache_available
-                target_positions = target_pose.inverse_kinematics_cached().positions
+                target_positions = target_pose.inverse_kinematics_cached()
             else:
-                (
-                    target_positions,
-                    resulted_pose_vector,
-                ) = target_pose.inverse_kinematics_ikpy(
+                target_positions = target_pose.inverse_kinematics_ikpy(
                     # todo when all modes fail, remove initial_joint_positions, move to more flexible positions
                     initial_joint_positions=initial_joint_positions,
                     solver_mode=solver_mode,
                     skip_validation=skip_validation,
                 )
             if target_positions is not None:
-                positions_delta = target_positions - np.array(
+                positions_delta = target_positions.actuator_positions - np.array(
                     self.__get_indexed_actuator_positions()
                 )
 
@@ -391,10 +390,14 @@ class ArmController:
         ), f"Currently this function only support for {(num_servos-1)/2} segment arm."
 
         if self.is_at_home_positions:
-            actuator_positions = motion.ActuatorPositions(positions=[0] * num_servos)
+            actuator_positions = motion.ActuatorPositions(
+                actuator_positions=[0] * num_servos
+            )
             self.move_to_actuator_positions(actuator_positions=actuator_positions)
         else:
-            actuator_positions = motion.ActuatorPositions(positions=self.home_positions)
+            actuator_positions = motion.ActuatorPositions(
+                actuator_positions=self.home_positions
+            )  # todo add gripper
             self.move_to_actuator_positions(actuator_positions=actuator_positions)
 
     def switch_forward_orientation_mode(self):
@@ -561,7 +564,9 @@ class ArmController:
                 for unique_name in self._indexed_servo_names
             ]
         )
-        offsets = np.array(destination.positions) - np.array(current.positions)
+        offsets = np.array(destination.actuator_positions) - np.array(
+            current.actuator_positions
+        )
         ms_per_s = 1000
         duration = np.abs(offsets / velocities / ms_per_s)
         max_duration = np.amax(duration)
@@ -954,7 +959,7 @@ class ArmController:
             positions = self.__get_indexed_actuator_positions()
             assert isinstance(positions[0], numbers.Number), type(positions[0])
             self.__current_actuator_positions = motion.ActuatorPositions(
-                positions=positions
+                actuator_positions=positions
             )
         return self.__current_actuator_positions
 
