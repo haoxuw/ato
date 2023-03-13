@@ -124,6 +124,7 @@ class ActuatorPositions(Position):
     def positions(self):
         return self.__actuator_positions
 
+    # todo rename to joint_positions
     @property
     def actuator_positions(self):
         return self.__actuator_positions[:-1]
@@ -575,13 +576,53 @@ class EndeffectorPose(Position):
         )
         return np.append(inferenced_actuator_positions, self.gripper_position)
 
-    def inverse_kinematics_cached(self):
-        initial_pose, initial_positions, ik_cache = self.ik_caches[
-            list(self.ik_caches.keys())[0]
-        ]  # todo, not hard code
-        logging.error((initial_pose, initial_positions, ik_cache))
-        target_positions = None
-        return target_positions
+    def inverse_kinematics_cached(self, orientation=SolverMode.FORWARD):
+        if orientation == SolverMode.FORWARD:
+            initial_xyz, initial_positions, ik_cache = self.ik_caches[  # todo add unit
+                list(self.ik_caches.keys())[0]
+            ]  # todo, not hard code
+        else:
+            raise Exception(f"Not supported {orientation}")
+        # todo remove
+        initial_xyz = initial_xyz[:3]
+        initial_positions = initial_positions[:6]
+        unit = 8
+        #########
+
+        xyz_relative = self.xyz - np.array(
+            initial_xyz
+        )  # recenter origin to initial_xyz
+        rounding_delta = xyz_relative - np.floor(xyz_relative / unit) * unit
+        rounded_down_xyz = self.xyz - rounding_delta
+        total_weight = 0
+        total_weighted_positions = np.zeros(len(initial_positions))
+        for offset in (  # loop over corners of the cube around xyz
+            (0, 0, 0),  # left back bottom
+            (1, 0, 0),  # right back bottom
+            (0, 1, 0),  # left front bottom
+            (1, 1, 0),  # right front bottom
+            (0, 0, 1),  # left back top
+            (1, 0, 1),  # right back top
+            (0, 1, 1),  # left front top
+            (1, 1, 1),  # right front top
+        ):
+            xyz_key = EndeffectorPose.to_fix_point(
+                rounded_down_xyz + np.array(offset) * unit
+            )
+            if ik_cache.get(xyz_key, None) is None:
+                continue
+            distance = np.sum(np.square(self.xyz - np.array(xyz_key))) ** 0.5
+            total_weighted_positions += ik_cache[xyz_key] * distance
+            total_weight += distance
+
+        target_positions = total_weighted_positions / total_weight
+        return ActuatorPositions(
+            positions=target_positions, gripper_position=self.gripper_position
+        )
+
+    @staticmethod
+    def to_fix_point(float_vector):
+        return tuple(round(float(val), 2) for val in float_vector)
 
 
 class Trajectory:

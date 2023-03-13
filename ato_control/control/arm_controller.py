@@ -320,7 +320,7 @@ class ArmController:
         for solver_mode in self.__solver_priorities:
             if self._use_cached_ik:
                 assert self.ik_cache_available
-                target_positions = target_pose.inverse_kinematics_cached()
+                target_positions = target_pose.inverse_kinematics_cached().positions
             else:
                 (
                     target_positions,
@@ -971,7 +971,3 @@ class ArmController:
         return self.__get_current_actuator_position_forward_kinematics()[
             "endeffector_pose_intrinsic"
         ]
-
-    @staticmethod
-    def to_fix_point(float_vector):
-        return tuple(round(float(val), 2) for val in float_vector)

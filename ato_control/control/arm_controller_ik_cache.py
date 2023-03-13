@@ -24,7 +24,7 @@ from control.config_and_enums.controller_enums import SolverMode
 class ArmControllerIkCache(arm_controller.ArmController):
     def __init__(
         self,
-        evaluation_depth=7,
+        evaluation_depth=3,
         forward_only=True,  # todo parse from arm_segments_config
         **kwargs,
     ):
@@ -96,16 +96,16 @@ class ArmControllerIkCache(arm_controller.ArmController):
                 positions=initial_positions_vector
             )
             initial_pose_vector = initial_positions.forward_kinematics_ikpy()
-            xyz = arm_controller.ArmController.to_fix_point(initial_pose_vector[:3])
+            initial_xyz = motion.EndeffectorPose.to_fix_point(initial_pose_vector[:3])
             if forward_only:
-                target_rpy = arm_controller.ArmController.to_fix_point(
+                target_rpy = motion.EndeffectorPose.to_fix_point(
                     (-90, 0, 0)
                 )  # along positive Y, i.e. horizontal forward
             else:
-                target_rpy = arm_controller.ArmController.to_fix_point(
+                target_rpy = motion.EndeffectorPose.to_fix_point(
                     initial_pose_vector[3:6]
                 )
-            eval_queue = deque([(xyz, initial_positions.actuator_positions)])
+            eval_queue = deque([(initial_xyz, initial_positions.actuator_positions)])
             # todo, consider making multi threaded bfs
             while eval_queue:
                 xyz, current_positions = eval_queue.popleft()
@@ -117,7 +117,7 @@ class ArmControllerIkCache(arm_controller.ArmController):
                     ):
                         # solve for each of the 6 directions
                         actual_delta = np.array(delta) * unit
-                        target_xyz = arm_controller.ArmController.to_fix_point(
+                        target_xyz = motion.EndeffectorPose.to_fix_point(
                             np.array(xyz) + actual_delta
                         )
                         if not ArmControllerIkCache.__within_reach(
@@ -156,12 +156,13 @@ class ArmControllerIkCache(arm_controller.ArmController):
                                 f"Failed Solving {viable}th point: {target_xyz}"
                             )
             ik_caches[target_rpy] = (
-                arm_controller.ArmController.to_fix_point(initial_pose_vector),
-                arm_controller.ArmController.to_fix_point(initial_positions_vector),
+                unit,
+                initial_xyz,
+                motion.EndeffectorPose.to_fix_point(initial_positions_vector),
                 ik_cache,
             )
         logging.info(
-            f"Generated {viable} data points, example ik_cache,\nX: \n{ik_caches}"
+            f"Generated {viable} data points, ik_cache.keys() == \n{ik_caches.keys()}"
         )
         return ik_caches
 
@@ -172,7 +173,7 @@ class ArmControllerIkCache(arm_controller.ArmController):
         ik_cache = ArmControllerIkCache.__evaluate_ik_cache(
             evaluation_depth=self.evaluation_depth,
             reach=self.reach,
-            multiple_initial_positions=[self.home_positions],
+            multiple_initial_positions=[self.home_positions[: self.num_segments * 2]],
             size=size,
             forward_only=self.forward_only,
         )
