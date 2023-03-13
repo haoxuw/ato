@@ -426,10 +426,22 @@ class EndeffectorPose(Position):
         return f"XYZ: ({self.x},{self.y},{self.z}); RPY: ({self.roll},{self.pitch},{self.yaw})"
 
     @classmethod
-    def set_ikpy_robot_chain(cls, urdf_filename):
+    def load_ikpy_robot_chain(cls, urdf_filename):
         cls.robot_chain = ikpy.chain.Chain.from_urdf_file(
             urdf_filename, active_links_mask=[False] + [True] * 6 + [False]
         )
+
+    @classmethod
+    def load_ik_cache(cls, file_path):
+        try:
+            with open(file_path, "rb") as fin:
+                logging.info(f"loading ik_cache to {file_path}")
+                cls.ik_caches = np.load(fin, allow_pickle=True).item()
+                fin.close()
+                return True
+        except Exception as exp:
+            logging.warning(f"Failed to load ik_cache, due to {exp}")
+            return False
 
     def inverse_kinematics_ikpy(
         self,
@@ -562,6 +574,14 @@ class EndeffectorPose(Position):
             sequence=inferenced_actuator_positions
         )
         return np.append(inferenced_actuator_positions, self.gripper_position)
+
+    def inverse_kinematics_cached(self):
+        initial_pose, initial_positions, ik_cache = self.ik_caches[
+            list(self.ik_caches.keys())[0]
+        ]  # todo, not hard code
+        logging.error((initial_pose, initial_positions, ik_cache))
+        target_positions = None
+        return target_positions
 
 
 class Trajectory:

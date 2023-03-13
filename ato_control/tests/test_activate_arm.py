@@ -9,7 +9,6 @@
 # See more details in the LICENSE folder.
 
 import logging
-import time
 
 import numpy as np
 from control import (

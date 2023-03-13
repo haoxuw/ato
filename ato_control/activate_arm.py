@@ -121,9 +121,7 @@ def main():
         arm_ctl = create_arm_controller_obj(
             args=args, generate_ik_cache=args.generate_ik_cache
         )
-        arm_ctl.generate_ik_cache(
-            ik_cache_filepath_prefix=args.ik_cache_filepath_prefix,
-        )
+        arm_ctl.generate_ik_cache()
     else:
         arm_ctl = create_arm_controller_obj(
             args=args,
