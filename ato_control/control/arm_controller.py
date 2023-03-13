@@ -47,6 +47,8 @@ class ArmController:
         cartesian_velocities_mm__per_ms=tuple(i * 0.01 for i in range(1, 10)),
         initial_velocity_level=2,
         home_positions=(0, 60, 0, -100, 0, -50, 0),  # (0, 20, 0, -80, 0, -30, 0),
+        use_cached_ik=True,
+        ik_cache_filepath_prefix="~/.ato/ik_cache",
     ):
         self._input_states = None
         self.home_positions = home_positions
@@ -61,14 +63,22 @@ class ArmController:
         self._indexed_servo_objs: Tuple[servo_interface.ServoInterface]
         self._indexed_servo_configs: Tuple[ServoConnectionConfig]
         self._indexed_segment_lengths: Tuple[float]
-        self.__gripper_length: float
+        self._gripper_length: float
+        self._use_cached_ik = use_cached_ik
+        self._ik_cache_filepath_prefix = ik_cache_filepath_prefix
+        if self._use_cached_ik:
+            self.ik_cache_available = motion.EndeffectorPose.load_ik_cache(
+                file_path=self._get_ik_cache_file_path(
+                    ik_cache_filepath_prefix=self._ik_cache_filepath_prefix
+                )
+            )
 
         (
             self._indexed_servo_names,
             self._indexed_servo_objs,
             self._indexed_servo_configs,
             self._indexed_segment_lengths,
-            self.__gripper_length,
+            self._gripper_length,
             self.__actuator_indices_mapping,
             self.__gripper_index_mapping,
             self.num_segments,
@@ -85,9 +95,7 @@ class ArmController:
         motion.ActuatorPositions.set_actuator_indices_mapping(
             actuator_indices_mapping=self.__actuator_indices_mapping
         )
-        motion.ActuatorPositions.set_gripper_length(
-            gripper_length=self.__gripper_length
-        )
+        motion.ActuatorPositions.set_gripper_length(gripper_length=self._gripper_length)
         motion.ActuatorPositions.set_gripper_index_mapping(
             gripper_index_mapping=self.__gripper_index_mapping
         )
@@ -95,7 +103,7 @@ class ArmController:
             rotation_ranges=self._get_indexed_rotation_ranges()
         )
 
-        motion.EndeffectorPose.set_ikpy_robot_chain(urdf_filename="ato_3_seg.urdf")
+        motion.EndeffectorPose.load_ikpy_robot_chain(urdf_filename="ato_3_seg.urdf")
 
         self.frame_rate = frame_rate
         self.interval_ms = 1000 // frame_rate
@@ -310,19 +318,20 @@ class ArmController:
         positions_delta, resulted_pose_vector = (None, None)
 
         for solver_mode in self.__solver_priorities:
-            (
-                target_positions,
-                resulted_pose_vector,
-            ) = target_pose.inverse_kinematics_ikpy(
-                # todo when all modes fail, remove initial_joint_positions, move to more flexible positions
-                initial_joint_positions=initial_joint_positions,
-                solver_mode=solver_mode,
-                skip_validation=skip_validation,
-            )
-            if target_positions is not None:
-                logging.debug(
-                    f"validated ik_fk @{solver_mode}: {resulted_pose_vector} == {target_pose.pose}"
+            if self._use_cached_ik:
+                assert self.ik_cache_available
+                target_positions = target_pose.inverse_kinematics_cached()
+            else:
+                (
+                    target_positions,
+                    resulted_pose_vector,
+                ) = target_pose.inverse_kinematics_ikpy(
+                    # todo when all modes fail, remove initial_joint_positions, move to more flexible positions
+                    initial_joint_positions=initial_joint_positions,
+                    solver_mode=solver_mode,
+                    skip_validation=skip_validation,
                 )
+            if target_positions is not None:
                 positions_delta = target_positions - np.array(
                     self.__get_indexed_actuator_positions()
                 )
@@ -879,7 +888,7 @@ class ArmController:
             plotted_elements["endeffector_reference_frame"] = draw_3_axes(
                 xyz=kinematics["segments_xyz"][-1:],
                 uvw=kinematics["endeffector_reference_frame"][:],
-                length=self.__gripper_length,
+                length=self._gripper_length,
             )
             if self._intended_pose is not None:
                 global_frame = np.array([[1, 0, 0], [0, 1, 0], [0, 0, 1]])
@@ -897,7 +906,7 @@ class ArmController:
                 plotted_elements["intended_pose"] = draw_3_axes(
                     xyz=np.array([self._intended_pose.xyz]),
                     uvw=np.array([uvw]),
-                    length=self.__gripper_length,
+                    length=self._gripper_length,
                     color=["orange", "cyan", "purple"],
                 )
             return iteration
@@ -922,6 +931,9 @@ class ArmController:
         #     self.__get_current_actuator_position_obj().forward_kinematics_ml_based()
         # )
         return f"{time_str} @activated_segment_ids={self.activated_segment_ids} $velocity deg/ms={self.actuator_velocity} {self.frame_rate}hz\n{actuator_states}\nMath-based EE estimate={math_based_current_pose}\n"
+
+    def _get_ik_cache_file_path(self, ik_cache_filepath_prefix):
+        return os.path.expanduser(f"{ik_cache_filepath_prefix}_ik_cache.npy")
 
     # the Sequence_Index would match self._indexed_ variables
     def __get_indexed_actuator_positions(self):
@@ -959,3 +971,7 @@ class ArmController:
         return self.__get_current_actuator_position_forward_kinematics()[
             "endeffector_pose_intrinsic"
         ]
+
+    @staticmethod
+    def to_fix_point(float_vector):
+        return tuple(round(float(val), 2) for val in float_vector)
