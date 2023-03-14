@@ -10,6 +10,18 @@
 
 from abc import ABC
 
+import control
+
 
 class InputDeviceInterface(ABC):
-    pass
+    def __init__(self):
+        self._arm_controller_obj: control.arm_controller_joystick.ArmControllerJoystick = (
+            None
+        )
+
+    # to handle new button release inputs (on opposed to persistent button holding)
+    # we would call hooks to arm_controller_obj
+    # an alternative is to gather state changes in the dict object, and expect arm to handle
+    # but without semaphores, there could be issues handling new inputs in quick successions
+    def connect_arm_controller(self, arm_controller_obj):
+        self._arm_controller_obj = arm_controller_obj

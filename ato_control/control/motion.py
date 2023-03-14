@@ -438,6 +438,7 @@ class EndeffectorPose(Position):
 
     @staticmethod
     def get_ikpy_robot_chain():
+        assert EndeffectorPose.urdf_filename is not None
         return ikpy.chain.Chain.from_urdf_file(
             urdf_file=EndeffectorPose.urdf_filename,
             active_links_mask=[False] + [True] * 6 + [False],  # todo 6
@@ -499,7 +500,7 @@ class EndeffectorPose(Position):
             )
         except Exception as e:
             logging.warning(f"Skipped IK for {orientation_mode}, exception: {e}")
-            return None, None
+            return None
 
         joint_positions = (
             joint_positions[1:7] * 180.0 / np.pi

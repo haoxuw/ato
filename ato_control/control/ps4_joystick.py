@@ -11,14 +11,13 @@
 import logging
 import threading
 
-import control
 from control.config_and_enums.controller_enums import ControllerStates
 from control.config_and_enums.joystick_input_types import Button, JoystickAxis
-from control.interface_classes import input_device_interface
+from control.interface_classes.input_device_interface import InputDeviceInterface
 from pyPS4Controller.controller import Controller
 
 
-class Ps4Joystick(Controller, input_device_interface.InputDeviceInterface):
+class Ps4Joystick(Controller, InputDeviceInterface):
     def __init__(self, interface):
         self.interface = interface
 
@@ -43,37 +42,57 @@ class Ps4Joystick(Controller, input_device_interface.InputDeviceInterface):
             JoystickAxis.L2R2: None,
         }
         Controller.__init__(self, interface=interface, connecting_using_ds4drv=False)
+        InputDeviceInterface.__init__(self)
         self.axis_max_value = 32767.0
-        self.__arm_controller_obj: control.arm_controller_joystick.ArmControllerJoystick = (
-            None
-        )
-        self.__thread = None
 
-    # to handle new button release inputs (on opposed to persistent button holding)
-    # we would call hooks to arm_controller_obj
-    # an alternative is to gather state changes in the dict object, and expect arm to handle
-    # but without semaphores, there could be issues handling new inputs in quick successions
-    def connect_arm_controller(self, arm_controller_obj):
-        self.__arm_controller_obj = arm_controller_obj
+        self.__thread = None
 
     @property
     def arm_controller_obj(self):
-        assert self.__arm_controller_obj is not None
-        return self.__arm_controller_obj
+        assert self._arm_controller_obj is not None
+        return self._arm_controller_obj
 
     @property
     def input_states(self):
-        return self.__arm_controller_obj.get_input_states()
+        return self._arm_controller_obj.get_input_states()
 
     @property
     def controller_states(self):
-        return self.__arm_controller_obj.get_controller_states()
+        return self._arm_controller_obj.get_controller_states()
 
     @property
     def arm_controller_running(self):
         return (
-            self.__arm_controller_obj is not None
-            and self.__arm_controller_obj.is_thread_running()
+            self._arm_controller_obj is not None
+            and self._arm_controller_obj.is_thread_running()
+        )
+
+    @property
+    def in_cartesian_mode(self):
+        return (
+            self._arm_controller_obj.controller_states[ControllerStates.CURRENT_MODE]
+            == ControllerStates.IN_CARTESIAN_MODE
+        )
+
+    @property
+    def in_joint_space_mode(self):
+        return (
+            self._arm_controller_obj.controller_states[ControllerStates.CURRENT_MODE]
+            == ControllerStates.IN_JOINT_SPACE_MODE
+        )
+
+    @property
+    def in_setting_mode(self):
+        return (
+            self._arm_controller_obj.controller_states[ControllerStates.CURRENT_MODE]
+            == ControllerStates.IN_SETTING_MODE
+        )
+
+    @property
+    def in_trajectory_recording_mode(self):
+        return (
+            self._arm_controller_obj.controller_states[ControllerStates.CURRENT_MODE]
+            == ControllerStates.IN_TRAJECTORY_RECORDING_MODE
         )
 
     def start_thread(self):
@@ -92,14 +111,25 @@ class Ps4Joystick(Controller, input_device_interface.InputDeviceInterface):
         else:
             logging.warning(f"Thread for Joystick Listener ALREADY stopped.")
 
+    @property
+    def __controller_mode_to_button_mapping(self):
+        mapping = dict(
+            zip(
+                [Button.UP, Button.RIGHT, Button.DOWN, Button.LEFT],
+                self.arm_controller_obj.controller_modes,
+            )
+        )
+        return mapping
+
     def __update_input_states(self, key, value):
         self.__joystick_internal_states[key] = value
         # external
         self.input_states[key] = value
-
-    @property
-    def in_setting_mode(self):
-        return self.__joystick_internal_states[Button.DOWN]
+        if key in self.__controller_mode_to_button_mapping:
+            if value is True:
+                self.arm_controller_obj.set_controller_mode(
+                    self.__controller_mode_to_button_mapping[key]
+                )
 
     def __str__(self):
         states = ""
@@ -110,7 +140,7 @@ class Ps4Joystick(Controller, input_device_interface.InputDeviceInterface):
             if not key.startswith("__DEBUG_STATE__")
         ]
         # derived states
-        joystick_state_display += [f"\tIN_SETTING_MODE: {self.in_setting_mode}"]
+        joystick_state_display += [f"{self.arm_controller_obj.controller_mode}"]
         states += "\n".join(joystick_state_display)
         return states
 
@@ -153,13 +183,10 @@ class Ps4Joystick(Controller, input_device_interface.InputDeviceInterface):
     def on_L1_release(self):
         self.__update_input_states(key=Button.L1, value=False)
         if self.in_setting_mode:
-            self.__arm_controller_obj.recalibrate_servos()
-            self.__arm_controller_obj.save_controller_states()
-        else:
-            if not self.controller_states[
-                ControllerStates.IN_CARTESIAN_NOT_JOINT_SPACE_MODE
-            ]:
-                self.__arm_controller_obj.change_segment_pointer(-1)
+            self._arm_controller_obj.recalibrate_servos()
+            self._arm_controller_obj.save_controller_states()
+        elif self.in_cartesian_mode or self.in_joint_space_mode:
+            self._arm_controller_obj.change_segment_pointer(-1)
         logging.debug("on_L1_release")
 
     def on_L2_press(self, value):
@@ -179,12 +206,9 @@ class Ps4Joystick(Controller, input_device_interface.InputDeviceInterface):
     def on_R1_release(self):
         self.__update_input_states(key=Button.R1, value=False)
         if self.in_setting_mode:
-            self.__arm_controller_obj.load_controller_states()
-        else:
-            if not self.controller_states[
-                ControllerStates.IN_CARTESIAN_NOT_JOINT_SPACE_MODE
-            ]:
-                self.__arm_controller_obj.change_segment_pointer(1)
+            self._arm_controller_obj.load_controller_states()
+        elif self.in_cartesian_mode or self.in_joint_space_mode:
+            self._arm_controller_obj.change_segment_pointer(1)
         logging.debug("on_R1_release")
 
     def on_R2_press(self, value):
@@ -210,7 +234,7 @@ class Ps4Joystick(Controller, input_device_interface.InputDeviceInterface):
         logging.debug("on_down_arrow_press")
 
     def on_left_arrow_press(self):
-        self.__arm_controller_obj.change_velocity_level(-1)
+        self._arm_controller_obj.change_velocity_level(-1)
         self.__update_input_states(key=Button.LEFT, value=True)
         logging.debug("on_left_arrow_press")
 
@@ -220,7 +244,7 @@ class Ps4Joystick(Controller, input_device_interface.InputDeviceInterface):
         logging.debug("on_left_right_arrow_release")
 
     def on_right_arrow_press(self):
-        self.__arm_controller_obj.change_velocity_level(1)
+        self._arm_controller_obj.change_velocity_level(1)
         self.__update_input_states(key=Button.RIGHT, value=True)
         logging.debug("on_right_arrow_press")
 
@@ -255,13 +279,13 @@ class Ps4Joystick(Controller, input_device_interface.InputDeviceInterface):
     def on_L3_y_at_rest(self):
         """L3 joystick is at rest after the joystick was moved and let go off"""
         self.__update_input_states(key=JoystickAxis.LEFT_VERTICAL, value=None)
-        self.__arm_controller_obj.stop_to_play_trajectory()
+        self._arm_controller_obj.stop_to_play_trajectory()
         logging.debug("on_L3_y_at_rest")
 
     def on_L3_x_at_rest(self):
         """L3 joystick is at rest after the joystick was moved and let go off"""
         self.__update_input_states(key=JoystickAxis.LEFT_HORIZONTAL, value=None)
-        self.__arm_controller_obj.stop_to_play_trajectory()
+        self._arm_controller_obj.stop_to_play_trajectory()
         logging.debug("on_L3_x_at_rest")
 
     def on_L3_press(self):
@@ -273,9 +297,14 @@ class Ps4Joystick(Controller, input_device_interface.InputDeviceInterface):
         """L3 joystick is released after the click. This event is only detected when connecting without ds4drv"""
         self.__update_input_states(key=Button.L3, value=False)
         if self.in_setting_mode:
-            self.__arm_controller_obj.move_to_installation_position()
-        else:
-            self.__arm_controller_obj.move_to_home_positions_otherwise_zeros()
+            self._arm_controller_obj.move_to_installation_position()
+        elif self.in_trajectory_recording_mode:
+            if self.in_trajectory_recording_mode:
+                self._arm_controller_obj.save_trajectory()
+            else:
+                self._arm_controller_obj.start_saving_trajectory()
+        elif self.in_cartesian_mode or self.in_joint_space_mode:
+            self._arm_controller_obj.move_to_home_positions_otherwise_zeros()
         logging.debug("on_L3_release")
 
     def on_R3_up(self, value):
@@ -309,13 +338,13 @@ class Ps4Joystick(Controller, input_device_interface.InputDeviceInterface):
     def on_R3_y_at_rest(self):
         """R3 joystick is at rest after the joystick was moved and let go off"""
         self.__update_input_states(key=JoystickAxis.RIGHT_VERTICAL, value=None)
-        self.__arm_controller_obj.stop_to_play_trajectory()
+        self._arm_controller_obj.stop_to_play_trajectory()
         logging.debug("on_R3_y_at_rest")
 
     def on_R3_x_at_rest(self):
         """R3 joystick is at rest after the joystick was moved and let go off"""
         self.__update_input_states(key=JoystickAxis.RIGHT_HORIZONTAL, value=None)
-        self.__arm_controller_obj.stop_to_play_trajectory()
+        self._arm_controller_obj.stop_to_play_trajectory()
         logging.debug("on_R3_x_at_rest")
 
     def on_R3_press(self):
@@ -326,14 +355,10 @@ class Ps4Joystick(Controller, input_device_interface.InputDeviceInterface):
     def on_R3_release(self):
         """R3 joystick is released after the click. This event is only detected when connecting without ds4drv"""
         self.__joystick_internal_states[Button.R3] = False
-        if self.in_setting_mode:
-            if self.controller_states[ControllerStates.IN_SAVING_TRAJECTORY_MODE]:
-                self.__arm_controller_obj.save_trajectory()
-            else:
-                self.__arm_controller_obj.start_saving_trajectory()
-        else:
-            self.__arm_controller_obj.switch_forward_orientation_mode()
-            # self.__arm_controller_obj.replay_trajectory() # todo create trajectory mode
+        if self.in_trajectory_recording_mode:
+            self._arm_controller_obj.replay_trajectory()  # todo create trajectory mode
+        elif self.in_cartesian_mode:
+            self._arm_controller_obj.switch_forward_orientation_mode()
         logging.debug("on_R3_release")
 
     def on_options_press(self):
@@ -341,9 +366,9 @@ class Ps4Joystick(Controller, input_device_interface.InputDeviceInterface):
 
     def on_options_release(self):
         if self.arm_controller_running:
-            self.__arm_controller_obj.stop_controller_thread()
+            self._arm_controller_obj.stop_controller_thread()
         else:
-            self.__arm_controller_obj.start_controller_thread()
+            self._arm_controller_obj.start_controller_thread()
         logging.debug("on_options_release")
 
     def on_share_press(self):
