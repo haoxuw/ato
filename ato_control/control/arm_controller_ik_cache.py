@@ -8,9 +8,7 @@
 # MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.
 # See more details in the LICENSE folder.
 import logging
-import multiprocessing
 import queue
-import threading
 from datetime import datetime
 
 import numpy as np
@@ -77,19 +75,15 @@ class ArmControllerIkCache(arm_controller.ArmController):
     def __evaluate_ik_cache(
         reach,
         multiple_initial_positions,
-        num_threads,
-        manager: multiprocessing.Manager,
         evaluation_unit=64,
     ):
         # initialize utility data structures
-        task_queue = multiprocessing.Queue()
-        ik_caches = manager.dict(
-            {
-                "feasible": 0,
-                "infeasible": 0,
-                "evaluation_unit": evaluation_unit,
-            }
-        )
+        task_queue = queue.Queue()
+        ik_caches = {
+            "feasible": 0,
+            "infeasible": 0,
+            "evaluation_unit": evaluation_unit,
+        }
 
         robot_chain = motion.EndeffectorPose.get_ikpy_robot_chain()
         for (
@@ -104,41 +98,22 @@ class ArmControllerIkCache(arm_controller.ArmController):
             initial_xyz = motion.EndeffectorPose.to_fix_point(initial_pose_vector[:3])
             initial_rpy = motion.EndeffectorPose.to_fix_point(initial_pose_vector[3:6])
 
-            ik_caches[initial_rpy] = manager.dict(
-                {
-                    "initial_xyz": initial_xyz,
-                    "initial_positions": (initial_positions),
-                    "ik_cache": manager.dict({}),
-                }
-            )
+            ik_caches[initial_rpy] = {
+                "initial_xyz": initial_xyz,
+                "initial_positions": initial_positions_vector,
+                "ik_cache": {},
+            }
 
             # initialize
-            task_queue.put(
-                (initial_rpy, initial_xyz, initial_positions.joint_positions)
-            )
+            task_queue.put((initial_rpy, initial_xyz, initial_positions_vector))
 
         kwargs = {
             "evaluation_unit": evaluation_unit,
             "ik_caches": ik_caches,
             "task_queue": task_queue,
             "reach": reach,
-            "threads_idle": {},
-            "lock": multiprocessing.Lock(),
         }
-        logging.info(
-            f"Machine has {multiprocessing.cpu_count()} cores, using {num_threads}"
-        )
-        processes = []
-        for _ in range(num_threads):
-            process = multiprocessing.Process(
-                target=ArmControllerIkCache.evaluate_ik_point, kwargs=kwargs
-            )
-            processes.append(process)
-
-        for process in processes:
-            process.start()
-        for process in processes:
-            process.join()
+        ik_caches = ArmControllerIkCache.evaluate_ik_point(**kwargs)
 
         logging.info(
             f"Generated {ik_caches['feasible']} data points out of {ArmControllerIkCache.solver_counter}, ik_cache.keys() == \n{ik_caches.keys()}"
@@ -153,24 +128,13 @@ class ArmControllerIkCache(arm_controller.ArmController):
         ik_caches,
         task_queue,
         reach,
-        threads_idle,
-        lock,
     ):
-        pid = multiprocessing.current_process().pid
-        threads_idle[pid] = False
         robot_chain = motion.EndeffectorPose.get_ikpy_robot_chain()
         total_duration = 0
         total_points = 1
 
-        while not all(threads_idle.values()):
-            lock.acquire()
-            try:
-                task = task_queue.get(block=True, timeout=1)
-                threads_idle[pid] = False
-            except queue.Empty:
-                threads_idle[pid] = True
-                lock.release()
-                continue
+        while not task_queue.empty():
+            task = task_queue.get()
 
             target_rpy, current_xyz, current_positions = task
             for direction in (-1, 1):
@@ -217,7 +181,7 @@ class ArmControllerIkCache(arm_controller.ArmController):
                         task_queue.put((target_rpy, target_xyz, joint_positions))
 
                         # update stats
-                        if ik_caches["feasible"] % 100 == 0:
+                        if ik_caches["feasible"] % 1000 == 0:
                             # density is a rough estimation because some pose marked infeasible may be solved by other path
                             density = round(
                                 ik_caches["feasible"]
@@ -225,8 +189,9 @@ class ArmControllerIkCache(arm_controller.ArmController):
                                 * 100,
                                 2,
                             )
+                            avg_time = round(total_duration * 1000 / total_points, 2)
                             logging.info(
-                                f"Solved {ik_caches['feasible']}th point: {target_xyz} by thread {pid} @ {validated_positions} ~{density}% density, avg_time {round(total_duration/total_points, 2)}"
+                                f"Solved {ik_caches['feasible']}th point: {target_xyz} @ {validated_positions} ~{density}% density, avg_time {avg_time}ms"
                             )
                         ik_caches["feasible"] += 1
                     else:
@@ -237,19 +202,14 @@ class ArmControllerIkCache(arm_controller.ArmController):
                         logging.debug(
                             f"Failed Solving {ik_caches['feasible']}th point: {target_xyz}"
                         )
-            lock.release()
+        return ik_caches
 
-    def generate_ik_cache(self, num_threads=1, evaluation_unit=128):
-        with multiprocessing.Manager() as manager:
-            ik_caches = ArmControllerIkCache.__evaluate_ik_cache(
-                reach=self.reach,
-                multiple_initial_positions=[
-                    self.home_positions[: self.num_segments * 2]
-                ],
-                num_threads=num_threads,
-                manager=manager,
-                evaluation_unit=evaluation_unit,
-            )
+    def generate_ik_cache(self, evaluation_unit=128):
+        ik_caches = ArmControllerIkCache.__evaluate_ik_cache(
+            reach=self.reach,
+            multiple_initial_positions=[self.home_positions[: self.num_segments * 2]],
+            evaluation_unit=evaluation_unit,
+        )
 
         file_path = self._get_ik_cache_file_path(
             ik_cache_filepath_prefix=self._ik_cache_filepath_prefix

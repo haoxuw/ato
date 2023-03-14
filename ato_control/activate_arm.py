@@ -60,11 +60,6 @@ def get_args():
         default=500,
     )
     parser.add_argument(
-        "--num_threads",
-        type=int,
-        default=1,
-    )
-    parser.add_argument(
         "--evaluation_unit",
         type=int,
         default=128,
@@ -131,9 +126,7 @@ def main():
         arm_ctl = create_arm_controller_obj(
             args=args, generate_ik_cache=args.generate_ik_cache
         )
-        arm_ctl.generate_ik_cache(
-            num_threads=args.num_threads, evaluation_unit=args.evaluation_unit
-        )
+        arm_ctl.generate_ik_cache(evaluation_unit=args.evaluation_unit)
     else:
         arm_ctl = create_arm_controller_obj(
             args=args,
