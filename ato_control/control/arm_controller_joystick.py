@@ -30,10 +30,10 @@ class ArmControllerJoystick(arm_controller.ArmController):
             Button.SQUARE: False,  # rotate counterclockwise
             Button.TRIANGLE: False,  # along Z axis, i.e. ascend
             Button.CIRCLE: False,  # rotate clockwise
-            Button.DOWN: False,  # settings mode (while holding)
-            Button.LEFT: False,
-            Button.UP: False,
-            Button.RIGHT: False,
+            Button.UP: False,  # cartesian mode
+            Button.RIGHT: False,  # joint space mode
+            Button.DOWN: False,  # settings mode
+            Button.LEFT: False,  # trajectory recording mode
             Button.L1: False,  # backwards along endeffector orientation
             Button.R1: False,  # forwards along endeffector orientation
             Button.L3: False,  # start recording trajectory, save trajectory
@@ -123,6 +123,4 @@ class ArmControllerJoystick(arm_controller.ArmController):
                     * self.actuator_velocity
                 )
                 joint_positions_delta[index] = position_delta
-        return self._move_servos_by_joint_space_delta(
-            joint_positions_delta=joint_positions_delta, show_info=show_info
-        )
+        return joint_positions_delta

@@ -106,6 +106,7 @@ class ArmController:
         current_dir = pathlib.Path(__file__).parent
         urdf_filename = os.path.join(current_dir, "..", "ato_3_seg.urdf")
         motion.EndeffectorPose.set_robot_chain_filename(urdf_filename=urdf_filename)
+        self.__robot_chain = None
 
         self.frame_rate = frame_rate
         self.interval_ms = 1000 // frame_rate
@@ -167,15 +168,38 @@ class ArmController:
     def get_input_states(self):
         return self._input_states
 
-    def get_controller_states(self):
+    @property
+    def controller_states(self):
         return self.__controller_states
 
     def reset_controller_flags(self):
         self.__controller_states = {
             ControllerStates.LOG_INFO_EACH_TENTHS_SECOND: False,
-            ControllerStates.IN_SAVING_TRAJECTORY_MODE: False,
-            ControllerStates.IN_CARTESIAN_NOT_JOINT_SPACE_MODE: True,
+            ControllerStates.CURRENT_MODE: ControllerStates.DEFAULT,
         }
+
+    @property
+    def controller_modes(self):
+        return [
+            ControllerStates.IN_CARTESIAN_MODE,
+            ControllerStates.IN_JOINT_SPACE_MODE,
+            ControllerStates.IN_SETTING_MODE,
+            ControllerStates.IN_TRAJECTORY_RECORDING_MODE,
+        ]
+
+    def set_controller_mode(self, mode):
+        assert mode in self.controller_modes
+        self.__controller_states[ControllerStates.CURRENT_MODE] = mode
+
+    @property
+    def controller_mode(self):
+        return self.__controller_states[ControllerStates.CURRENT_MODE]
+
+    @property
+    def robot_chain(self):
+        if self.__robot_chain is None:
+            self.__robot_chain = motion.EndeffectorPose.get_ikpy_robot_chain()
+        return self.__robot_chain
 
     def is_thread_running(self):
         if self.__controller_thread is None:
@@ -322,12 +346,15 @@ class ArmController:
         positions_delta, resulted_pose_vector = (None, None)
 
         for solver_mode in self.__solver_priorities:
-            if self._use_cached_ik:
+            if self._use_cached_ik and self.__solver_priorities == (
+                SolverMode.FORWARD,
+            ):  # todo: ik_cache only support forward mode for now
                 assert self.ik_cache_available
                 target_positions = target_pose.inverse_kinematics_cached()
             else:
-                target_positions = target_pose.inverse_kinematics_ikpy(
-                    # todo when all modes fail, remove initial_joint_positions, move to more flexible positions
+                target_positions = motion.EndeffectorPose.inverse_kinematics_ikpy(
+                    robot_chain=self.robot_chain,
+                    target_pose=target_pose,
                     initial_joint_positions=initial_joint_positions,
                     solver_mode=solver_mode,
                     skip_validation=skip_validation,
@@ -378,7 +405,7 @@ class ArmController:
             ) / (self.solver_perf_stats["count"] + 1)
         self.solver_perf_stats["count"] += 1
         logging.debug(self.solver_perf_stats)
-        return (positions_delta, resulted_pose_vector)
+        return positions_delta  # , resulted_pose_vector
 
     def move_to_installation_position(self):
         for servo in self._indexed_servo_objs:
@@ -419,11 +446,11 @@ class ArmController:
         self.__active_trajectory_start_time = datetime.now()
 
     def start_saving_trajectory(self):
-        self.__controller_states[ControllerStates.IN_SAVING_TRAJECTORY_MODE] = True
+        # todo if recording mode
+        logging.info(f"Started recording trajectory")
         self.__reset_trajectory()
 
     def save_trajectory(self):
-        self.__controller_states[ControllerStates.IN_SAVING_TRAJECTORY_MODE] = False
         self.__trajectory_saved = copy.deepcopy(self.__active_trajectory)
         logging.info(f"Saving: {self.__trajectory_saved}")
 
@@ -641,6 +668,8 @@ class ArmController:
             ControllerStates.LOG_INFO_EACH_TENTHS_SECOND
         ]
         if self.is_playing_trajectory(current_time=current_time):
+            self.__moving_towards_positions_delta = None
+
             trajectory: motion.Trajectory = self.__trajectory_to_play["trajectory"]
             since_replay_start_delta = (
                 current_time - self.__trajectory_to_play["start_time"]
@@ -653,41 +682,47 @@ class ArmController:
                     unique_name=unique_name, position=position, show_info=show_info
                 )
             self.__update_intended_pose_to_current_pose()
-        elif self.__controller_states[
-            ControllerStates.IN_CARTESIAN_NOT_JOINT_SPACE_MODE
-        ]:
-            # todo, when rpy was compromised, only set xyz in implied_current_pose_vector
+        elif (
+            self.__controller_states[ControllerStates.CURRENT_MODE]
+            == ControllerStates.IN_CARTESIAN_MODE
+        ):
             target_pose = self._parse_movement_updates_in_cartesian_space(
                 time_delta_ms=time_delta_ms,
             )
             if target_pose is None:
-                self.__moving_towards_positions_delta = None
+                # only move if there's user input, to prevent out of control scenario
+                pass  # to the end of function
             else:
-                self._intended_pose = target_pose
-                (
-                    positions_delta,
-                    _,  # implied_current_pose_vector,
-                ) = self.__solve_valid_movements_from_target_pose(
+                positions_delta = self.__solve_valid_movements_from_target_pose(
                     target_pose=target_pose, time_delta_ms=time_delta_ms
                 )
-                self.__moving_towards_positions_delta = positions_delta
 
-            if (
-                self.__moving_towards_positions_delta is not None
-            ):  # may inherit value from pervious cycles
+                if positions_delta is None:  # no solution, then follow momentum
+                    positions_delta = self.__moving_towards_positions_delta
+                else:  # has solution, then update momentum
+                    self.__moving_towards_positions_delta = positions_delta
 
                 self._move_servos_by_joint_space_delta(
                     joint_positions_delta=self.__moving_towards_positions_delta
                 )
+                # update intended pose
+                self._intended_pose = target_pose
 
-            else:
-                # no movement, don't update intended pose
-                pass
-        else:
-            self._parse_movement_updates_in_joint_space(
+        elif (
+            self.__controller_states[ControllerStates.CURRENT_MODE]
+            == ControllerStates.IN_JOINT_SPACE_MODE
+        ):
+            self.__moving_towards_positions_delta = None
+
+            joint_positions_delta = self._parse_movement_updates_in_joint_space(
                 time_delta_ms=time_delta_ms,
                 show_info=show_info,
             )
+            self._move_servos_by_joint_space_delta(
+                joint_positions_delta=joint_positions_delta, show_info=show_info
+            )
+            # update intended pose
+            # even if no user input was recorded
             self.__update_intended_pose_to_current_pose()
 
     def _move_servos_by_joint_space_delta(self, joint_positions_delta, show_info=False):

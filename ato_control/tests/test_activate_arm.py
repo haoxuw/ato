@@ -41,7 +41,6 @@ def test_generate_ik_cache():
         pi_obj=pi,
         joystick_obj=joystick,
         arm_segments_config=arm_segments_config,
-        evaluation_unit=256,
     )
     arm_ctl.generate_ik_cache()
 
