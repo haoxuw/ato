@@ -452,7 +452,7 @@ class EndeffectorPose(Position):
                 fin.close()
                 return True
         except Exception as exp:
-            logging.warning(f"Failed to load ik_cache, due to {exp}")
+            logging.warning(f"Failed to load ik_cache @{file_path}, due to {exp}")
             return False
 
     @staticmethod
@@ -599,16 +599,20 @@ class EndeffectorPose(Position):
 
     def inverse_kinematics_cached(self, orientation=SolverMode.FORWARD):
         if orientation == SolverMode.FORWARD:
-            unit, initial_xyz, initial_positions, ik_cache = self.ik_caches[
-                list(self.ik_caches.keys())[0]
-            ]  # todo, not hard code
+            orientation = (-90, 0, 0)
+            evaluation_unit = self.ik_caches["evaluation_unit"]
+            initial_xyz = self.ik_caches[orientation]["initial_xyz"]
+            initial_positions = self.ik_caches[orientation]["initial_positions"]
+            ik_cache = self.ik_caches[orientation]["ik_cache"]
         else:
             raise Exception(f"Not supported yet {orientation}")
 
         xyz_relative = self.xyz - np.array(
             initial_xyz
         )  # recenter origin to initial_xyz
-        rounding_delta = xyz_relative - np.floor(xyz_relative / unit) * unit
+        rounding_delta = (
+            xyz_relative - np.floor(xyz_relative / evaluation_unit) * evaluation_unit
+        )
         rounded_down_xyz = self.xyz - rounding_delta
         total_weight = 0
         total_weighted_positions = np.zeros(len(initial_positions))
@@ -623,7 +627,7 @@ class EndeffectorPose(Position):
             (1, 1, 1),  # right front top
         ):
             xyz_key = EndeffectorPose.to_fix_point(
-                rounded_down_xyz + np.array(offset) * unit
+                rounded_down_xyz + np.array(offset) * evaluation_unit
             )
             if ik_cache.get(xyz_key, None) is None:
                 continue
