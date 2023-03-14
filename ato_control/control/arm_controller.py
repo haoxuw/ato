@@ -103,7 +103,9 @@ class ArmController:
             rotation_ranges=self._get_indexed_rotation_ranges()
         )
 
-        motion.EndeffectorPose.load_ikpy_robot_chain(urdf_filename="ato_3_seg.urdf")
+        current_dir = pathlib.Path(__file__).parent
+        urdf_filename = os.path.join(current_dir, "..", "ato_3_seg.urdf")
+        motion.EndeffectorPose.set_robot_chain_filename(urdf_filename=urdf_filename)
 
         self.frame_rate = frame_rate
         self.interval_ms = 1000 // frame_rate

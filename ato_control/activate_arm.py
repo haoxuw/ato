@@ -60,6 +60,16 @@ def get_args():
         default=500,
     )
     parser.add_argument(
+        "--num_threads",
+        type=int,
+        default=1,
+    )
+    parser.add_argument(
+        "--evaluation_unit",
+        type=int,
+        default=128,
+    )
+    parser.add_argument(
         "--training_data_filepath_prefix",
         type=str,
         default="~/.ato/training_data",
@@ -121,7 +131,9 @@ def main():
         arm_ctl = create_arm_controller_obj(
             args=args, generate_ik_cache=args.generate_ik_cache
         )
-        arm_ctl.generate_ik_cache()
+        arm_ctl.generate_ik_cache(
+            num_threads=args.num_threads, evaluation_unit=args.evaluation_unit
+        )
     else:
         arm_ctl = create_arm_controller_obj(
             args=args,
