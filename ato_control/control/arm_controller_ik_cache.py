@@ -81,6 +81,7 @@ class ArmControllerIkCache(arm_controller.ArmController):
         size=None,
         forward_only=True,
     ):
+        iterations = 0
         ik_caches = {}
         viable = 0
         infeasible = 0
@@ -113,6 +114,7 @@ class ArmControllerIkCache(arm_controller.ArmController):
                         (0, direction, 0),
                         (0, 0, direction),
                     ):
+                        iterations += 1
                         # solve for each of the 6 directions
                         actual_delta = np.array(delta) * unit
                         target_xyz = motion.EndeffectorPose.to_fix_point(
@@ -132,11 +134,13 @@ class ArmControllerIkCache(arm_controller.ArmController):
                             target_pose=target_pose,
                             current_positions=current_positions,
                             forward_only=forward_only,
-                        ).joint_positions
+                        )
 
                         if validated_positions is not None:
-                            ik_cache[target_xyz] = validated_positions
-                            eval_queue.append((target_xyz, validated_positions))
+                            ik_cache[target_xyz] = validated_positions.joint_positions
+                            eval_queue.append(
+                                (target_xyz, validated_positions.joint_positions)
+                            )
                             if viable % 100 == 0:
                                 # density is a rough estimation because some pose marked infeasible may be solved by other path
                                 logging.info(
@@ -159,7 +163,7 @@ class ArmControllerIkCache(arm_controller.ArmController):
                 ik_cache,
             )
         logging.info(
-            f"Generated {viable} data points, ik_cache.keys() == \n{ik_caches.keys()}"
+            f"Generated {viable} data points out of {iterations}, ik_cache.keys() == \n{ik_caches.keys()}"
         )
         return ik_caches
 
