@@ -49,6 +49,7 @@ class ArmController:
         home_positions=(0, 60, 0, -100, 0, -50, 0),  # (0, 20, 0, -80, 0, -30, 0),
         use_cached_ik=True,
         ik_cache_filepath_prefix="~/.ato/ik_cache",
+        home_folder_path="~/.ato/",
     ):
         self._input_states = None
         self.home_positions = home_positions
@@ -151,11 +152,19 @@ class ArmController:
         self.load_controller_states()
         self.__update_intended_pose_to_current_pose()
 
+        self._home_folder_path = home_folder_path
+        self.create_folder(folder_path=home_folder_path)
+
         self.__controller_start_time = datetime.now()
         self.ready = True
 
     def reset_input_states(self):
         return
+
+    @staticmethod
+    def create_folder(folder_path):
+        folder_path = os.path.expanduser(folder_path)
+        pathlib.Path(folder_path).mkdir(parents=True, exist_ok=True)
 
     @property
     def is_at_home_positions(self):
