@@ -15,7 +15,7 @@ SCRIPT_FOLDER_PATH=$(dirname ${SCRIPT_FILE_PATH})
 MAX_WAIT_TIME=5 # run for 5s
 cd "${SCRIPT_FOLDER_PATH}/../"
 
-python -m pytest tests/
+{ python -m pytest tests/ ; } || { echo 'Mesh module failed to generate shelf.stl.'; exit -2; }
 
 echo
 echo "Sanity passed"
