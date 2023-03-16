@@ -13,4 +13,5 @@ from . import (
     controller_enums,
     debugging_configs,
     joystick_input_types,
+    predefined_arms,
 )

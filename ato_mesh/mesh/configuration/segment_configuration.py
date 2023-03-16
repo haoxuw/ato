@@ -500,7 +500,7 @@ class SegmentConfigs:
             self.actuator = ServoConfigsDs5160()
             self.motor_horn = HornDiskConfigsDs5160()
         else:
-            raise Exception(f"Unsupported actuator_type: {actuator_type}")
+            raise Exception(f"Unsupported actuator_type == {actuator_type}")
 
         if HornBoltLengthOverride is not None:
             self.motor_horn.HornBoltLength = HornBoltLengthOverride

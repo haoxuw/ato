@@ -18,7 +18,7 @@ from control import (
     ps4_joystick,
     raspberry_pi,
 )
-from control.config_and_enums.arm_connection_config import arm_segments_config
+from control.config_and_enums.predefined_arms import arm_4_axis, arm_6_axis
 
 
 def get_args():
@@ -76,10 +76,27 @@ def get_args():
         default="~/.ato/ik_cache",
         help="Add a suffix to the filename of generated ik cache.",
     )
+    arm_configs = ["arm_4_axis", "arm_6_axis"]
+    parser.add_argument(
+        "--arm_segments_config",
+        type=str,
+        choices=arm_configs,
+        default="arm_6_axis",
+        help=f"Select a valid arm config from {arm_configs}",
+    )
     return parser.parse_args()
 
 
 def create_arm_controller_obj(args, for_training=False, generate_ik_cache=0):
+    if args.arm_segments_config == "arm_4_axis":
+        arm_segments_config = arm_4_axis
+    elif args.arm_segments_config == "arm_6_axis":
+        arm_segments_config = arm_6_axis
+    else:
+        raise Exception(
+            f"Unsupported arm_segments_config == {args.arm_segments_config}"
+        )
+
     pi = raspberry_pi.RaspberryPi()
     joystick = ps4_joystick.Ps4Joystick(interface=f"/dev/input/js{str(args.input_js)}")
     if for_training:

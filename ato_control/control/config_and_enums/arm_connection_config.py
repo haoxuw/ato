@@ -10,8 +10,6 @@
 
 from dataclasses import dataclass
 
-from control import servo_ds3218, servo_ds5160
-
 
 @dataclass
 # matches raspberry pi header id to bcm number
@@ -54,106 +52,6 @@ class ServoConnectionConfig:
             self.servo_class,
             self.servo_max_position,  # There are two versions of DS5160, rotates 0~180 and 0~270 respectively, with former supporting finer control but less range.
             self.velocity_magnifier,
-            self.installation_angle,
             self.rotation_range,
         ) = connection_def
-
-
-# use (-130, 130) instead of (0, 180) on rotation_range to prevent damages from overshooting rotation
-
-# this object defines the particular arm config that I happen to be using now
-# Copied from the StructuralConfigsSi's configuration
-SegmentLength = 220
-GripperLength = 147
-# servo_max_position should be configured according to which flavor of the arm was assembled
-arm_segments_config = {
-    0: {
-        SegmentConfigTypes.PHYSICAL_LENGTH: SegmentLength,
-        ActuatorPurpose.ROLL: ServoConnectionConfig(
-            (
-                ActuatorPurpose.ROLL,
-                PiHeaderIdToBCM.TWENTY_NINE,
-                servo_ds5160.ServoDs5160,
-                270,
-                1,
-                135,
-                (-135, 135),
-            ),
-        ),
-        ActuatorPurpose.PITCH: ServoConnectionConfig(
-            (
-                ActuatorPurpose.PITCH,
-                PiHeaderIdToBCM.THIRTY_ONE,
-                servo_ds5160.ServoDs5160,
-                270,
-                1,
-                135,
-                (-130, 130),
-            )
-        ),
-    },
-    1: {
-        SegmentConfigTypes.PHYSICAL_LENGTH: SegmentLength,
-        ActuatorPurpose.ROLL: ServoConnectionConfig(
-            (
-                ActuatorPurpose.ROLL,
-                PiHeaderIdToBCM.THIRTY_TWO,
-                servo_ds5160.ServoDs5160,
-                270,
-                1,
-                135,
-                (-135, 135),
-            )
-        ),
-        ActuatorPurpose.PITCH: ServoConnectionConfig(
-            (
-                ActuatorPurpose.PITCH,
-                PiHeaderIdToBCM.THIRTY_THREE,
-                servo_ds5160.ServoDs5160,
-                270,
-                1,
-                135,
-                (-130, 130),
-            )
-        ),
-    },
-    2: {
-        SegmentConfigTypes.PHYSICAL_LENGTH: SegmentLength,
-        ActuatorPurpose.ROLL: ServoConnectionConfig(
-            (
-                ActuatorPurpose.ROLL,
-                PiHeaderIdToBCM.THIRTY_FIVE,
-                servo_ds5160.ServoDs5160,
-                270,
-                1,
-                135,
-                (-135, 135),
-            )
-        ),
-        ActuatorPurpose.PITCH: ServoConnectionConfig(
-            (
-                ActuatorPurpose.PITCH,
-                PiHeaderIdToBCM.THIRTY_SIX,
-                servo_ds5160.ServoDs5160,
-                270,
-                1,
-                135,
-                (-130, 130),
-            )
-        ),
-    },
-    -1: {
-        SegmentConfigTypes.PHYSICAL_LENGTH: GripperLength,
-        ActuatorPurpose.GRIPPER: ServoConnectionConfig(
-            (
-                ActuatorPurpose.GRIPPER,
-                PiHeaderIdToBCM.FORTY,
-                servo_ds3218.ServoDs3218,
-                180,
-                8,
-                80,
-                (-80, 0),
-            )
-        ),
-    },
-}
+        self.installation_angle = -self.rotation_range[0]  # realign at logical zero
