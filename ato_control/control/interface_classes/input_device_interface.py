@@ -15,9 +15,7 @@ import control
 
 class InputDeviceInterface(ABC):
     def __init__(self):
-        self._arm_controller_obj: control.arm_controller_joystick.ArmControllerJoystick = (
-            None
-        )
+        self._arm_controller_obj: control.arm_controller.ArmController = None
 
     # to handle new button release inputs (on opposed to persistent button holding)
     # we would call hooks to arm_controller_obj

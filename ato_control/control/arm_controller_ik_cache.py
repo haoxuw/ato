@@ -116,11 +116,11 @@ class ArmControllerIkCache(arm_controller.ArmController):
         ik_caches = ArmControllerIkCache.evaluate_ik_point(**kwargs)
 
         logging.info(
-            f"Generated {ik_caches['feasible']} data points out of {ArmControllerIkCache.solver_counter}, ik_cache.keys() == \n{ik_caches.keys()}"
+            f"Generated {ik_caches['feasible']} data points out of {ArmControllerIkCache.eval_loop_counter}, ik_cache.keys() == \n{ik_caches.keys()}"
         )
         return ik_caches
 
-    solver_counter = 0
+    eval_loop_counter = 0
 
     @staticmethod
     def evaluate_ik_point(
@@ -143,6 +143,8 @@ class ArmControllerIkCache(arm_controller.ArmController):
                     (0, direction, 0),
                     (0, 0, direction),
                 ):
+                    ArmControllerIkCache.eval_loop_counter += 1
+
                     # solve for each of the 6 directions
                     actual_delta = np.array(delta) * evaluation_unit
                     target_xyz = motion.EndeffectorPose.to_fix_point(
@@ -152,8 +154,6 @@ class ArmControllerIkCache(arm_controller.ArmController):
                         target_xyz=target_xyz, reach=reach
                     ):
                         continue
-
-                    ArmControllerIkCache.solver_counter += 1
 
                     if target_xyz in ik_caches[target_rpy]["ik_cache"]:
                         if ik_caches[target_rpy]["ik_cache"][target_xyz] is not None:
@@ -191,7 +191,7 @@ class ArmControllerIkCache(arm_controller.ArmController):
                             )
                             avg_time = round(total_duration * 1000 / total_points, 2)
                             logging.info(
-                                f"Solved {ik_caches['feasible']}th point: {target_xyz} @ {validated_positions} ~{density}% density, avg_time {avg_time}ms"
+                                f"Solved {ik_caches['feasible']}th point: {target_xyz} {validated_positions} ~{density}% density, avg_time {avg_time}ms"
                             )
                         ik_caches["feasible"] += 1
                     else:
@@ -218,5 +218,3 @@ class ArmControllerIkCache(arm_controller.ArmController):
             logging.info(f"Saving ik_cache to {file_path}")
             np.save(fout, ik_caches)
             fout.close()
-
-        # logging.error(ik_caches[(-90, 0, 0)]["ik_cache"])

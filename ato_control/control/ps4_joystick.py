@@ -58,7 +58,7 @@ class Ps4Joystick(Controller, InputDeviceInterface):
 
     @property
     def controller_states(self):
-        return self._arm_controller_obj.get_controller_states()
+        return self._arm_controller_obj.controller_states
 
     @property
     def arm_controller_running(self):
@@ -94,6 +94,10 @@ class Ps4Joystick(Controller, InputDeviceInterface):
             self._arm_controller_obj.controller_states[ControllerStates.CURRENT_MODE]
             == ControllerStates.IN_TRAJECTORY_RECORDING_MODE
         )
+
+    @property
+    def recording_on(self):
+        return self._arm_controller_obj.controller_states[ControllerStates.RECORDING_ON]
 
     def start_thread(self):
         self.__thread = threading.Thread(target=self.listen, kwargs={"timeout": 600})
@@ -299,10 +303,10 @@ class Ps4Joystick(Controller, InputDeviceInterface):
         if self.in_setting_mode:
             self._arm_controller_obj.move_to_installation_position()
         elif self.in_trajectory_recording_mode:
-            if self.in_trajectory_recording_mode:
+            if self.recording_on:
                 self._arm_controller_obj.save_trajectory()
             else:
-                self._arm_controller_obj.start_saving_trajectory()
+                self._arm_controller_obj.start_recording_trajectory()
         elif self.in_cartesian_mode or self.in_joint_space_mode:
             self._arm_controller_obj.move_to_home_positions_otherwise_zeros()
         logging.debug("on_L3_release")
@@ -378,11 +382,6 @@ class Ps4Joystick(Controller, InputDeviceInterface):
     def on_share_release(self):
         """this event is only detected when connecting without ds4drv"""
         if self.in_setting_mode:
-            self.controller_states[
-                ControllerStates.IN_CARTESIAN_NOT_JOINT_SPACE_MODE
-            ] ^= True
-            self.arm_controller_obj.reset_input_states()
-        else:
             self.controller_states[ControllerStates.LOG_INFO_EACH_TENTHS_SECOND] ^= True
         logging.debug("on_share_release")
 

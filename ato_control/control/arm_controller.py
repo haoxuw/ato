@@ -185,6 +185,7 @@ class ArmController:
         self.__controller_states = {
             ControllerStates.LOG_INFO_EACH_TENTHS_SECOND: False,
             ControllerStates.CURRENT_MODE: ControllerStates.DEFAULT,
+            ControllerStates.RECORDING_ON: False,
         }
 
     @property
@@ -198,7 +199,11 @@ class ArmController:
 
     def set_controller_mode(self, mode):
         assert mode in self.controller_modes
-        self.__controller_states[ControllerStates.CURRENT_MODE] = mode
+        self.update_controller_state(key=ControllerStates.CURRENT_MODE, value=mode)
+        self.reset_input_states()
+
+    def update_controller_state(self, key, value):
+        self.__controller_states[key] = value
 
     @property
     def controller_mode(self):
@@ -454,14 +459,15 @@ class ArmController:
         )
         self.__active_trajectory_start_time = datetime.now()
 
-    def start_saving_trajectory(self):
-        # todo if recording mode
-        logging.info(f"Started recording trajectory")
+    def start_recording_trajectory(self):
+        self.update_controller_state(key=ControllerStates.RECORDING_ON, value=True)
         self.__reset_trajectory()
+        logging.info(f"Started recording trajectory")
 
     def save_trajectory(self):
+        self.update_controller_state(key=ControllerStates.RECORDING_ON, value=False)
         self.__trajectory_saved = copy.deepcopy(self.__active_trajectory)
-        logging.info(f"Saving: {self.__trajectory_saved}")
+        logging.info(f"Saved: {self.__trajectory_saved}")
 
     def start_threads(self, start_joystick_thread=True):
         self.start_arm_controller_thread()
@@ -790,12 +796,13 @@ class ArmController:
         self.__get_current_actuator_position_obj(refresh=True)
         self.__get_current_actuator_position_forward_kinematics(refresh=True)
 
-        # append to_trajectory
-        delta = datetime.now() - self.__active_trajectory_start_time
-        self.__active_trajectory.append(
-            timestamp=delta.total_seconds(),
-            positions=self.__get_current_actuator_position_obj(),
-        )
+        if self.__controller_states[ControllerStates.RECORDING_ON]:
+            # append to_trajectory
+            delta = datetime.now() - self.__active_trajectory_start_time
+            self.__active_trajectory.append(
+                timestamp=delta.total_seconds(),
+                positions=self.__get_current_actuator_position_obj(),
+            )
 
     def arm_controller_thread_loop(
         self,
