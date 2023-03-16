@@ -89,7 +89,7 @@ class BonePitchAbstract(cq_mesh.CqMesh):
             )
         else:
             raise Exception(
-                f"Unsupported pitch range {self.segment_configs.structural.PitchRange}"
+                f"Unsupported pitch range == {self.segment_configs.structural.PitchRange}"
             )
         bone_pitch_space = bone_pitch_space.translate(
             (0, 0, self.segment_configs.structural.PitchCenterLocationZ)

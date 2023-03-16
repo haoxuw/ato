@@ -17,7 +17,7 @@ from control import (
     ps4_joystick,
     raspberry_pi,
 )
-from control.config_and_enums.arm_connection_config import arm_segments_config
+from control.config_and_enums.predefined_arms import arm_6_axis
 
 
 def test_component_obj_creation():
@@ -28,7 +28,7 @@ def test_component_obj_creation():
         frame_rate=20,
         pi_obj=pi,
         joystick_obj=joystick,
-        arm_segments_config=arm_segments_config,
+        arm_segments_config=arm_6_axis,
     )
     assert arm_ctl.ready is True
 
@@ -40,7 +40,7 @@ def test_generate_ik_cache():
     arm_ctl = arm_controller_ik_cache.ArmControllerIkCache(
         pi_obj=pi,
         joystick_obj=joystick,
-        arm_segments_config=arm_segments_config,
+        arm_segments_config=arm_6_axis,
     )
     arm_ctl.generate_ik_cache()
 
@@ -53,7 +53,7 @@ def test_move_L3():
         frame_rate=20,
         pi_obj=pi,
         joystick_obj=joystick,
-        arm_segments_config=arm_segments_config,
+        arm_segments_config=arm_6_axis,
         auto_save_controller_states_to_file=False,
     )
 

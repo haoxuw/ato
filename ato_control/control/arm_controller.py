@@ -46,13 +46,11 @@ class ArmController:
         ),  # angular velocity
         cartesian_velocities_mm__per_ms=tuple(i * 0.01 for i in range(1, 10)),
         initial_velocity_level=2,
-        home_positions=(0, 60, 0, -100, 0, -50, 0),  # (0, 20, 0, -80, 0, -30, 0),
         use_cached_ik=True,
         ik_cache_filepath_prefix="~/.ato/ik_cache",
         home_folder_path="~/.ato/",
     ):
         self._input_states = None
-        self.home_positions = home_positions
         assert isinstance(pi_obj, raspberry_pi.RaspberryPi)
         self.__pi_obj = pi_obj
 
@@ -86,6 +84,17 @@ class ArmController:
         ) = ArmController.__register_servo_objs(
             arm_segments_config=arm_segments_config, pi_obj=self.pi_obj
         )
+
+        # customization of home_positions via config is not allowed
+        # those hard coded values works with ik cache
+        if self.num_segments == 3:
+            self.home_positions = (0, 60, 0, -100, 0, -50, 0)
+            # or (0, 20, 0, -80, 0, -30, 0),
+        elif self.num_segments == 2:
+            self.home_positions = (0, -20, 0, -70, 0)
+        else:
+            raise Exception(f"Unsupported num_segments == {self.num_segments}")
+
         self.__inverse_indexed_servo_names = {
             name: index for index, name in enumerate(self._indexed_servo_names)
         }
@@ -105,7 +114,9 @@ class ArmController:
         )
 
         current_dir = pathlib.Path(__file__).parent
-        urdf_filename = os.path.join(current_dir, "..", "ato_3_seg.urdf")
+        urdf_filename = os.path.join(
+            current_dir, "..", "ato_3_seg.urdf"
+        )  # todo add 2 seg
         motion.EndeffectorPose.set_robot_chain_filename(urdf_filename=urdf_filename)
         self.__robot_chain = None
 
@@ -360,9 +371,11 @@ class ArmController:
         positions_delta, resulted_pose_vector = (None, None)
 
         for solver_mode in self.__solver_priorities:
-            if self._use_cached_ik and self.__solver_priorities == (
-                SolverMode.FORWARD,
-            ):  # todo: ik_cache only support forward mode for now
+            if (
+                self._use_cached_ik
+                and self.__solver_priorities == (SolverMode.FORWARD,)
+                and self.num_segments == 3
+            ):  # todo: ik_cache only support forward mode 3 segments arm for now
                 assert self.ik_cache_available
                 target_positions = target_pose.inverse_kinematics_cached()
             else:
@@ -427,20 +440,16 @@ class ArmController:
 
     # if already at home position, move all actuators to logical zero (installation position)
     def move_to_home_positions_otherwise_zeros(self):
-        num_servos = 7
-        assert (
-            len(self._indexed_servo_names) == num_servos
-        ), f"Currently this function only support for {(num_servos-1)/2} segment arm."
-
         if self.is_at_home_positions:
             actuator_positions = motion.ActuatorPositions(
-                actuator_positions=[0] * num_servos
+                actuator_positions=[0] * (self.num_segments * 2 + 1)
             )
             self.move_to_actuator_positions(actuator_positions=actuator_positions)
         else:
+            logging.error(self.home_positions)
             actuator_positions = motion.ActuatorPositions(
                 actuator_positions=self.home_positions
-            )  # todo add gripper
+            )
             self.move_to_actuator_positions(actuator_positions=actuator_positions)
 
     def switch_forward_orientation_mode(self):
