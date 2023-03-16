@@ -16,6 +16,9 @@ This package uses the following components to implement control flow of the arm
 #### To start arm controller to interface with RaspberryPI (RPI), with joystick at /dev/input/js0 (-j 0)
 > $ sudo pigpiod && ./ato_control/scripts/activate_arm.sh -j 0
 
+#### Generate cache to improve responsiveness when running on device
+> $ ./ato_control/scripts/activate_arm.sh -j 4 -v --generate_ik_cache --evaluation_unit 4
+
 #### Performance and sanity testing
 > $ cd ./ato_control && python -m pytest tests/ --profile-svg -k test_generate_ik_cache -v -s
 

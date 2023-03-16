@@ -33,7 +33,6 @@ class ColoredFormatter(logging.Formatter):
         log_fmt = self.colored_format.get(record.levelno)
         formatter = logging.Formatter(log_fmt)
         return formatter.format(record)
-        # create logger with 'spam_application'
 
 
 logger = logging.getLogger()

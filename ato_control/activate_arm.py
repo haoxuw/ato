@@ -57,7 +57,7 @@ def get_args():
     parser.add_argument(
         "--frame_rate",
         type=int,
-        default=500,
+        default=100,
     )
     parser.add_argument(
         "--evaluation_unit",
