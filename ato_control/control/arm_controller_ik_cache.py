@@ -12,7 +12,7 @@ import queue
 from datetime import datetime
 
 import numpy as np
-from control import arm_controller, motion
+from control import arm_controller, arm_position
 from control.config_and_enums.controller_enums import SolverMode
 
 
@@ -58,7 +58,7 @@ class ArmControllerIkCache(arm_controller.ArmController):
             solver_mode = SolverMode.FORWARD
         else:
             solver_mode = SolverMode.ALL
-        validated_positions = motion.EndeffectorPose.inverse_kinematics_ikpy(
+        validated_positions = arm_position.EndeffectorPose.inverse_kinematics_ikpy(
             robot_chain=robot_chain,
             target_pose=target_pose,
             solver_mode=solver_mode,
@@ -85,18 +85,22 @@ class ArmControllerIkCache(arm_controller.ArmController):
             "evaluation_unit": evaluation_unit,
         }
 
-        robot_chain = motion.EndeffectorPose.get_ikpy_robot_chain()
+        robot_chain = arm_position.EndeffectorPose.get_ikpy_robot_chain()
         for (
             initial_positions_vector
         ) in multiple_initial_positions:  # todo: may add more
-            initial_positions = motion.ActuatorPositions(
+            initial_positions = arm_position.ActuatorPositions(
                 joint_positions=initial_positions_vector
             )
             initial_pose_vector = initial_positions.forward_kinematics_ikpy(
                 robot_chain=robot_chain
             ).pose
-            initial_xyz = motion.EndeffectorPose.to_fix_point(initial_pose_vector[:3])
-            initial_rpy = motion.EndeffectorPose.to_fix_point(initial_pose_vector[3:6])
+            initial_xyz = arm_position.EndeffectorPose.to_fix_point(
+                initial_pose_vector[:3]
+            )
+            initial_rpy = arm_position.EndeffectorPose.to_fix_point(
+                initial_pose_vector[3:6]
+            )
 
             ik_caches[initial_rpy] = {
                 "initial_xyz": initial_xyz,
@@ -129,7 +133,7 @@ class ArmControllerIkCache(arm_controller.ArmController):
         task_queue,
         reach,
     ):
-        robot_chain = motion.EndeffectorPose.get_ikpy_robot_chain()
+        robot_chain = arm_position.EndeffectorPose.get_ikpy_robot_chain()
         total_duration = 0
         total_points = 1
 
@@ -147,7 +151,7 @@ class ArmControllerIkCache(arm_controller.ArmController):
 
                     # solve for each of the 6 directions
                     actual_delta = np.array(delta) * evaluation_unit
-                    target_xyz = motion.EndeffectorPose.to_fix_point(
+                    target_xyz = arm_position.EndeffectorPose.to_fix_point(
                         np.array(current_xyz) + actual_delta
                     )
                     if not ArmControllerIkCache.__within_reach(
@@ -160,7 +164,7 @@ class ArmControllerIkCache(arm_controller.ArmController):
                             continue
 
                     assert target_rpy == (-90, 0, 0), "Not supported"
-                    target_pose = motion.EndeffectorPose(
+                    target_pose = arm_position.EndeffectorPose(
                         pose=np.concatenate([target_xyz, target_rpy])
                     )
 
