@@ -25,9 +25,9 @@ class Ps4Joystick(Controller, InputDeviceInterface):
         self.__joystick_internal_states = {
             # when in_trajectory_recording_mode:
             Button.CROSS: False,  # set next waypoint
-            Button.SQUARE: False,  # repeat last N
+            Button.SQUARE: False,  # start recording
             Button.TRIANGLE: False,  # pause 1s
-            Button.CIRCLE: False,  # delete last waypoint
+            Button.CIRCLE: False,  # repeat last N waypoint
             Button.L1: False,  # N += 1
             Button.R1: False,  # N = max(0, N-1)
             Button.DOWN: False,
@@ -155,10 +155,14 @@ class Ps4Joystick(Controller, InputDeviceInterface):
 
     def on_x_release(self):
         self.__update_input_states(key=Button.CROSS, value=False)
+        if self.in_trajectory_recording_mode:
+            self.arm_controller_obj.recorded_trajectory_append_waypoint()
         logging.debug("on_x_release")
 
     def on_triangle_press(self):
         self.__update_input_states(key=Button.TRIANGLE, value=True)
+        if self.in_trajectory_recording_mode:
+            self.arm_controller_obj.recorded_trajectory_append_pause()
         logging.debug("on_triangle_press")
 
     def on_triangle_release(self):
@@ -179,6 +183,11 @@ class Ps4Joystick(Controller, InputDeviceInterface):
 
     def on_square_release(self):
         self.__update_input_states(key=Button.SQUARE, value=False)
+        if self.in_trajectory_recording_mode:
+            if self.recording_on:
+                self.arm_controller_obj.stop_recording_trajectory()
+            else:
+                self.arm_controller_obj.start_recording_trajectory()
         logging.debug("on_square_release")
 
     def on_L1_press(self):
@@ -188,8 +197,11 @@ class Ps4Joystick(Controller, InputDeviceInterface):
     def on_L1_release(self):
         self.__update_input_states(key=Button.L1, value=False)
         if self.in_setting_mode:
-            self._arm_controller_obj.recalibrate_servos()
-            self._arm_controller_obj.save_controller_states()
+            self._arm_controller_obj.change_velocity_level(-1)
+
+            # todo: reassign
+            # self._arm_controller_obj.recalibrate_servos()
+            # self._arm_controller_obj.save_controller_states()
         elif self.in_cartesian_mode or self.in_joint_space_mode:
             self._arm_controller_obj.change_segment_pointer(-1)
         logging.debug("on_L1_release")
@@ -211,7 +223,10 @@ class Ps4Joystick(Controller, InputDeviceInterface):
     def on_R1_release(self):
         self.__update_input_states(key=Button.R1, value=False)
         if self.in_setting_mode:
-            self._arm_controller_obj.load_controller_states()
+            self._arm_controller_obj.change_velocity_level(1)
+
+            # todo: reassign
+            # self._arm_controller_obj.load_controller_states()
         elif self.in_cartesian_mode or self.in_joint_space_mode:
             self._arm_controller_obj.change_segment_pointer(1)
         logging.debug("on_R1_release")
@@ -239,7 +254,6 @@ class Ps4Joystick(Controller, InputDeviceInterface):
         logging.debug("on_down_arrow_press")
 
     def on_left_arrow_press(self):
-        self._arm_controller_obj.change_velocity_level(-1)
         self.__update_input_states(key=Button.LEFT, value=True)
         logging.debug("on_left_arrow_press")
 
@@ -249,7 +263,6 @@ class Ps4Joystick(Controller, InputDeviceInterface):
         logging.debug("on_left_right_arrow_release")
 
     def on_right_arrow_press(self):
-        self._arm_controller_obj.change_velocity_level(1)
         self.__update_input_states(key=Button.RIGHT, value=True)
         logging.debug("on_right_arrow_press")
 
@@ -304,10 +317,7 @@ class Ps4Joystick(Controller, InputDeviceInterface):
         if self.in_setting_mode:
             self._arm_controller_obj.move_to_installation_position()
         elif self.in_trajectory_recording_mode:
-            if self.recording_on:
-                self._arm_controller_obj.save_trajectory()
-            else:
-                self._arm_controller_obj.start_recording_trajectory()
+            self._arm_controller_obj.save_trajectory()
         elif self.in_cartesian_mode or self.in_joint_space_mode:
             self._arm_controller_obj.move_to_home_positions_otherwise_zeros()
         logging.debug("on_L3_release")

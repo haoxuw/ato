@@ -156,7 +156,7 @@ class ArmController:
 
         self.reset_input_states()
         self.reset_controller_flags()
-        self.__reset_trajectory_recording()
+        self.reset_recorded_trajectory()
 
         self.load_controller_states()
         self.__update_intended_pose_to_current_pose()
@@ -205,7 +205,7 @@ class ArmController:
         self.__controller_states = {
             ControllerStates.LOG_INFO_EACH_TENTHS_SECOND: False,
             ControllerStates.CURRENT_MODE: ControllerStates.DEFAULT,
-            ControllerStates.RECORDING_ON: False,
+            ControllerStates.RECORDING_ON: None,
         }
 
     @property
@@ -323,7 +323,7 @@ class ArmController:
                     )
                     for timestamp, positions in arm_config["saved_trajectory"]:
                         self.__trajectory_saved.append(
-                            timestamp=timestamp,
+                            timestamp_delta=timestamp,
                             positions=arm_position.ActuatorPositions(
                                 actuator_positions=positions
                             ),
@@ -348,7 +348,7 @@ class ArmController:
             arm_trajectory.TrajectoryActuatorPositions.prepend_reposition_to_trajectory(
                 target_trajectory=self.__trajectory_saved,
                 current_positions=self.__get_current_actuator_position_obj(),
-                velocities=self.scaled_actuator_velocities,
+                velocities=self.actuator_velocities_scaled,
             )
         )
         self.queue_up_trajectory(trajectory)
@@ -483,21 +483,48 @@ class ArmController:
         else:
             self.__solver_priorities = (SolverMode.FORWARD,)
 
-    def __reset_trajectory_recording(self):
+    def reset_recorded_trajectory(self):
         self.__recorded_trajectory: arm_trajectory.TrajectoryActuatorPositions = (
             arm_trajectory.TrajectoryActuatorPositions(start_time=datetime.now())
         )
 
+    def stop_recording_trajectory(self):
+        self.update_controller_state(key=ControllerStates.RECORDING_ON, value=None)
+        logging.info(f"Stopped recording trajectory")
+
     def start_recording_trajectory(self):
-        self.update_controller_state(key=ControllerStates.RECORDING_ON, value=True)
-        self.__reset_trajectory_recording()
+        self.update_controller_state(
+            key=ControllerStates.RECORDING_ON,
+            value=(self.__recorded_trajectory.latest_timestamp, datetime.now()),
+        )
+        self.recorded_trajectory_append_waypoint()
         logging.info(f"Started recording trajectory")
 
     def save_trajectory(self):
-        self.update_controller_state(key=ControllerStates.RECORDING_ON, value=False)
+        self.stop_recording_trajectory()
         self.__trajectory_saved = copy.deepcopy(self.__recorded_trajectory)
-        self.__reset_trajectory_recording()
+        self.reset_recorded_trajectory()
         logging.info(f"Saved: {self.__trajectory_saved}")
+
+    def recorded_trajectory_append_waypoint(self):
+        if len(self.__recorded_trajectory) == 0:
+            self.__recorded_trajectory.append(
+                timestamp_delta=0, positions=self.__get_current_actuator_position_obj()
+            )
+        else:
+            self.__recorded_trajectory.append_waypoint(
+                waypoint=self.__get_current_actuator_position_obj(),
+                velocities=self.actuator_velocities_scaled,
+            )
+
+    def recorded_trajectory_append_pause(
+        self, pause_sec=1
+    ):  # todo change to trajectory_in_editing
+        if len(self.__recorded_trajectory) == 0:
+            self.__recorded_trajectory.append(
+                timestamp_delta=0, positions=self.__get_current_actuator_position_obj()
+            )
+        self.__recorded_trajectory.append_pause(pause_sec=pause_sec)
 
     def start_threads(self, start_joystick_thread=True):
         self.start_arm_controller_thread()
@@ -637,7 +664,7 @@ class ArmController:
             arm_trajectory.TrajectoryActuatorPositions.prepend_reposition_to_trajectory(
                 target_trajectory=trajectory,
                 current_positions=self.__get_current_actuator_position_obj(),
-                velocities=self.scaled_actuator_velocities,
+                velocities=self.actuator_velocities_scaled,
                 pause_sec=pause_sec,
             )
         )
@@ -792,11 +819,18 @@ class ArmController:
         self.__get_current_actuator_position_obj(refresh=True)
         self.__get_current_actuator_position_forward_kinematics(refresh=True)
 
-        if self.__controller_states[ControllerStates.RECORDING_ON]:
-            # append to_trajectory
-            delta = datetime.now() - self.__recorded_trajectory.start_time
+        recording_on: Tuple = self.__controller_states[ControllerStates.RECORDING_ON]
+        if recording_on is not None:
+            (
+                trajectory_timestamp_at_recording_start,
+                recording_start_clock_time,
+            ) = recording_on
+            delta = (
+                trajectory_timestamp_at_recording_start
+                + (datetime.now() - recording_start_clock_time).total_seconds()
+            )
             self.__recorded_trajectory.append(
-                timestamp=delta.total_seconds(),
+                timestamp_delta=delta,
                 positions=self.__get_current_actuator_position_obj(),
             )
 
@@ -844,6 +878,10 @@ class ArmController:
         logging.info(states)
 
     @property
+    def recorded_trajectory(self):
+        return self.__recorded_trajectory
+
+    @property
     def pi_obj(self):
         assert self.__pi_obj is not None
         return self.__pi_obj
@@ -856,7 +894,7 @@ class ArmController:
     @property
     # each actuator may move at a different speed
     # e.g. gripper move faster than joints
-    def scaled_actuator_velocities(self):
+    def actuator_velocities_scaled(self):
         return np.array(
             [
                 self.actuator_velocity
