@@ -11,7 +11,7 @@ import logging
 import os
 
 import numpy as np
-from control import arm_controller, motion
+from control import arm_controller, arm_position
 
 
 class ArmControllerMlTraining(arm_controller.ArmController):
@@ -19,7 +19,7 @@ class ArmControllerMlTraining(arm_controller.ArmController):
     def __get_endeffector_pose_intrinsic(actuator_positions, index=None, size=None):
         if index is not None and size is not None and (index - 1) % 10000 == 0:
             logging.info(f"Processed {index//1000}k ({int(100.0 * index / size)}%)")
-        return motion.ActuatorPositions(
+        return arm_position.ActuatorPositions(
             joint_positions=actuator_positions[:-1],
             gripper_position=actuator_positions[-1],
         ).forward_kinematics_math_based()["endeffector_pose_intrinsic"]
@@ -41,7 +41,7 @@ class ArmControllerMlTraining(arm_controller.ArmController):
         matching_endeffector_pose_intrinsic = np.array(
             [
                 self.__get_endeffector_pose_intrinsic(
-                    actuator_positions=motion.ActuatorPositions.denormalize_relu6(
+                    actuator_positions=arm_position.ActuatorPositions.denormalize_relu6(
                         relu6_val
                     ),
                     index=index,
@@ -87,7 +87,7 @@ class ArmControllerMlTraining(arm_controller.ArmController):
                 size=len(current_actuator_positions_relu6),
             )
             current_actuator_positions_degrees = (
-                motion.ActuatorPositions.denormalize_relu6(
+                arm_position.ActuatorPositions.denormalize_relu6(
                     current_actuator_positions_relu6
                 )
             )
@@ -98,7 +98,7 @@ class ArmControllerMlTraining(arm_controller.ArmController):
                 current_actuator_positions_degrees + noise_in_degrees
             )
             target_actuator_positions_relu6 = (
-                motion.ActuatorPositions.normalize_to_relu6(
+                arm_position.ActuatorPositions.normalize_to_relu6(
                     sequence=target_actuator_positions_degrees
                 )
             )
