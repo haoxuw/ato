@@ -23,16 +23,17 @@ class Ps4Joystick(Controller, InputDeviceInterface):
 
         # shared by arm_servo_controller thread
         self.__joystick_internal_states = {
-            Button.CROSS: False,
-            Button.SQUARE: False,
-            Button.TRIANGLE: False,
-            Button.CIRCLE: False,
+            # when in_trajectory_recording_mode:
+            Button.CROSS: False,  # set next waypoint
+            Button.SQUARE: False,  # repeat last N
+            Button.TRIANGLE: False,  # pause 1s
+            Button.CIRCLE: False,  # delete last waypoint
+            Button.L1: False,  # N += 1
+            Button.R1: False,  # N = max(0, N-1)
             Button.DOWN: False,
             Button.LEFT: False,
             Button.UP: False,
             Button.RIGHT: False,
-            Button.L1: False,
-            Button.R1: False,
             Button.L3: False,
             Button.R3: False,
             JoystickAxis.LEFT_HORIZONTAL: None,

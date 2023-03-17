@@ -116,7 +116,7 @@ class ArmController:
         current_dir = pathlib.Path(__file__).parent
         urdf_filename = os.path.join(
             current_dir, "..", "ato_3_seg.urdf"
-        )  # todo add 2 seg
+        )  # todo add 2 seg, move to urdf folder, add to arm connection config
         motion.EndeffectorPose.set_robot_chain_filename(urdf_filename=urdf_filename)
         self.__robot_chain = None
 
@@ -158,7 +158,7 @@ class ArmController:
 
         self.reset_input_states()
         self.reset_controller_flags()
-        self.__reset_trajectory()
+        self.__reset_trajectory_recording()
 
         self.load_controller_states()
         self.__update_intended_pose_to_current_pose()
@@ -283,7 +283,12 @@ class ArmController:
                 arm_config = json.load(fin)
 
                 # servo_names
-                self._indexed_servo_names = arm_config["servo_names"]
+                loaded_indexed_servo_names = arm_config["servo_names"]
+                if set(self._indexed_servo_names) != set(loaded_indexed_servo_names):
+                    logging.warning(
+                        f"Skipped loading states from {file_path} -- likely saved from a different arm configuration."
+                    )
+                    return
 
                 # calibration_deltas
                 for unique_name, position in zip(
@@ -446,7 +451,6 @@ class ArmController:
             )
             self.move_to_actuator_positions(actuator_positions=actuator_positions)
         else:
-            logging.error(self.home_positions)
             actuator_positions = motion.ActuatorPositions(
                 actuator_positions=self.home_positions
             )
@@ -462,20 +466,27 @@ class ArmController:
         else:
             self.__solver_priorities = (SolverMode.FORWARD,)
 
-    def __reset_trajectory(self):
-        self.__active_trajectory: motion.TrajectoryActuatorPositions = (
+    def __reset_trajectory_recording(self):
+        empty_trajectory: motion.TrajectoryActuatorPositions = (
             motion.TrajectoryActuatorPositions()
         )
-        self.__active_trajectory_start_time = datetime.now()
+        self.__trajectory_recording = {
+            "trajectory": empty_trajectory,
+            "start_time": datetime.now(),
+            "cursor_offset": 0,
+        }
 
     def start_recording_trajectory(self):
         self.update_controller_state(key=ControllerStates.RECORDING_ON, value=True)
-        self.__reset_trajectory()
+        self.__reset_trajectory_recording()
         logging.info(f"Started recording trajectory")
 
     def save_trajectory(self):
         self.update_controller_state(key=ControllerStates.RECORDING_ON, value=False)
-        self.__trajectory_saved = copy.deepcopy(self.__active_trajectory)
+        self.__trajectory_saved = copy.deepcopy(
+            self.__trajectory_recording["trajectory"]
+        )
+        self.__reset_trajectory_recording()
         logging.info(f"Saved: {self.__trajectory_saved}")
 
     def start_threads(self, start_joystick_thread=True):
@@ -588,7 +599,6 @@ class ArmController:
         indexed_servo_objs.append(servo_obj)
         indexed_servo_configs.append(servo_config)
         gripper_index_mapping = len(indexed_servo_names)
-
         return (
             tuple(indexed_servo_names),
             tuple(indexed_servo_objs),
@@ -807,8 +817,8 @@ class ArmController:
 
         if self.__controller_states[ControllerStates.RECORDING_ON]:
             # append to_trajectory
-            delta = datetime.now() - self.__active_trajectory_start_time
-            self.__active_trajectory.append(
+            delta = datetime.now() - self.__trajectory_recording["start_time"]
+            self.__trajectory_recording["trajectory"].append(
                 timestamp=delta.total_seconds(),
                 positions=self.__get_current_actuator_position_obj(),
             )
