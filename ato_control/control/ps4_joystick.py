@@ -23,7 +23,7 @@ class Ps4Joystick(Controller, InputDeviceInterface):
 
         # shared by arm_servo_controller thread
         self.__joystick_internal_states = {
-            # when in_trajectory_recording_mode:
+            # when in_trajectory_editing_mode:
             Button.CROSS: False,  # set next waypoint
             Button.SQUARE: False,  # start recording
             Button.TRIANGLE: False,  # pause 1s
@@ -90,10 +90,10 @@ class Ps4Joystick(Controller, InputDeviceInterface):
         )
 
     @property
-    def in_trajectory_recording_mode(self):
+    def in_trajectory_editing_mode(self):
         return (
             self._arm_controller_obj.controller_states[ControllerStates.CURRENT_MODE]
-            == ControllerStates.IN_TRAJECTORY_RECORDING_MODE
+            == ControllerStates.IN_TRAJECTORY_EDITING_MODE
         )
 
     @property
@@ -155,14 +155,14 @@ class Ps4Joystick(Controller, InputDeviceInterface):
 
     def on_x_release(self):
         self.__update_input_states(key=Button.CROSS, value=False)
-        if self.in_trajectory_recording_mode:
-            self.arm_controller_obj.recorded_trajectory_append_waypoint()
+        if self.in_trajectory_editing_mode:
+            self.arm_controller_obj.trajectory_in_editing_append_waypoint()
         logging.debug("on_x_release")
 
     def on_triangle_press(self):
         self.__update_input_states(key=Button.TRIANGLE, value=True)
-        if self.in_trajectory_recording_mode:
-            self.arm_controller_obj.recorded_trajectory_append_pause()
+        if self.in_trajectory_editing_mode:
+            self.arm_controller_obj.trajectory_in_editing_append_pause()
         logging.debug("on_triangle_press")
 
     def on_triangle_release(self):
@@ -183,7 +183,7 @@ class Ps4Joystick(Controller, InputDeviceInterface):
 
     def on_square_release(self):
         self.__update_input_states(key=Button.SQUARE, value=False)
-        if self.in_trajectory_recording_mode:
+        if self.in_trajectory_editing_mode:
             if self.recording_on:
                 self.arm_controller_obj.stop_recording_trajectory()
             else:
@@ -316,7 +316,7 @@ class Ps4Joystick(Controller, InputDeviceInterface):
         self.__update_input_states(key=Button.L3, value=False)
         if self.in_setting_mode:
             self._arm_controller_obj.move_to_installation_position()
-        elif self.in_trajectory_recording_mode:
+        elif self.in_trajectory_editing_mode:
             self._arm_controller_obj.save_trajectory()
         elif self.in_cartesian_mode or self.in_joint_space_mode:
             self._arm_controller_obj.move_to_home_positions_otherwise_zeros()
@@ -370,7 +370,7 @@ class Ps4Joystick(Controller, InputDeviceInterface):
     def on_R3_release(self):
         """R3 joystick is released after the click. This event is only detected when connecting without ds4drv"""
         self.__joystick_internal_states[Button.R3] = False
-        if self.in_trajectory_recording_mode:
+        if self.in_trajectory_editing_mode:
             self._arm_controller_obj.replay_trajectory()  # todo create trajectory mode
         elif self.in_cartesian_mode:
             self._arm_controller_obj.switch_forward_orientation_mode()
