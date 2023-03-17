@@ -163,7 +163,10 @@ class ArmControllerIkCache(arm_controller.ArmController):
                         if ik_caches[target_rpy]["ik_cache"][target_xyz] is not None:
                             continue
 
-                    assert target_rpy == (-90, 0, 0), "Not supported"
+                    assert target_rpy == (-90, 0, 0), (
+                        "Not supported target_rpy",
+                        target_rpy,
+                    )
                     target_pose = arm_position.EndeffectorPose(
                         pose=np.concatenate([target_xyz, target_rpy])
                     )
