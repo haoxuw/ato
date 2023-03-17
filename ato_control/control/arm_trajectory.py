@@ -8,10 +8,10 @@
 # MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.
 # See more details in the LICENSE folder.
 
-import logging
 import bisect
 import collections
 import json
+import logging
 from typing import List, Tuple
 
 import numpy as np

@@ -156,7 +156,7 @@ class ArmController:
 
         self.reset_input_states()
         self.reset_controller_flags()
-        self.reset_recorded_trajectory()
+        self.reset_trajectory_in_editing()
 
         self.load_controller_states()
         self.__update_intended_pose_to_current_pose()
@@ -214,7 +214,7 @@ class ArmController:
             ControllerStates.IN_CARTESIAN_MODE,
             ControllerStates.IN_JOINT_SPACE_MODE,
             ControllerStates.IN_SETTING_MODE,
-            ControllerStates.IN_TRAJECTORY_RECORDING_MODE,
+            ControllerStates.IN_TRAJECTORY_EDITING_MODE,
         ]
 
     def set_controller_mode(self, mode):
@@ -483,8 +483,8 @@ class ArmController:
         else:
             self.__solver_priorities = (SolverMode.FORWARD,)
 
-    def reset_recorded_trajectory(self):
-        self.__recorded_trajectory: arm_trajectory.TrajectoryActuatorPositions = (
+    def reset_trajectory_in_editing(self):
+        self.__trajectory_in_editing: arm_trajectory.TrajectoryActuatorPositions = (
             arm_trajectory.TrajectoryActuatorPositions(start_time=datetime.now())
         )
 
@@ -495,36 +495,36 @@ class ArmController:
     def start_recording_trajectory(self):
         self.update_controller_state(
             key=ControllerStates.RECORDING_ON,
-            value=(self.__recorded_trajectory.latest_timestamp, datetime.now()),
+            value=(self.__trajectory_in_editing.latest_timestamp, datetime.now()),
         )
-        self.recorded_trajectory_append_waypoint()
+        self.trajectory_in_editing_append_waypoint()
         logging.info(f"Started recording trajectory")
 
     def save_trajectory(self):
         self.stop_recording_trajectory()
-        self.__trajectory_saved = copy.deepcopy(self.__recorded_trajectory)
-        self.reset_recorded_trajectory()
+        self.__trajectory_saved = copy.deepcopy(self.__trajectory_in_editing)
+        self.reset_trajectory_in_editing()
         logging.info(f"Saved: {self.__trajectory_saved}")
 
-    def recorded_trajectory_append_waypoint(self):
-        if len(self.__recorded_trajectory) == 0:
-            self.__recorded_trajectory.append(
+    def trajectory_in_editing_append_waypoint(self):
+        if len(self.__trajectory_in_editing) == 0:
+            self.__trajectory_in_editing.append(
                 timestamp_delta=0, positions=self.__get_current_actuator_position_obj()
             )
         else:
-            self.__recorded_trajectory.append_waypoint(
+            self.__trajectory_in_editing.append_waypoint(
                 waypoint=self.__get_current_actuator_position_obj(),
                 velocities=self.actuator_velocities_scaled,
             )
 
-    def recorded_trajectory_append_pause(
+    def trajectory_in_editing_append_pause(
         self, pause_sec=1
     ):  # todo change to trajectory_in_editing
-        if len(self.__recorded_trajectory) == 0:
-            self.__recorded_trajectory.append(
+        if len(self.__trajectory_in_editing) == 0:
+            self.__trajectory_in_editing.append(
                 timestamp_delta=0, positions=self.__get_current_actuator_position_obj()
             )
-        self.__recorded_trajectory.append_pause(pause_sec=pause_sec)
+        self.__trajectory_in_editing.append_pause(pause_sec=pause_sec)
 
     def start_threads(self, start_joystick_thread=True):
         self.start_arm_controller_thread()
@@ -829,7 +829,7 @@ class ArmController:
                 trajectory_timestamp_at_recording_start
                 + (datetime.now() - recording_start_clock_time).total_seconds()
             )
-            self.__recorded_trajectory.append(
+            self.__trajectory_in_editing.append(
                 timestamp_delta=delta,
                 positions=self.__get_current_actuator_position_obj(),
             )
@@ -878,8 +878,8 @@ class ArmController:
         logging.info(states)
 
     @property
-    def recorded_trajectory(self):
-        return self.__recorded_trajectory
+    def trajectory_in_editing(self):
+        return self.__trajectory_in_editing
 
     @property
     def pi_obj(self):
