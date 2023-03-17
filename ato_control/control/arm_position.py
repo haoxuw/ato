@@ -527,8 +527,8 @@ class EndeffectorPose(ArmPosition):
         intended_pose_vector,
         new_joint_positions_sent_to_hardware: collections.abc.Sequence,
         tolerance={
-            "xyz_atol": 10,  # mm
-            "rpy_atol": 3,  # degrees
+            "xyz_atol": 5,  # mm
+            "rpy_atol": 5,  # degrees
         },
         use_ikpy=True,
     ):
@@ -547,12 +547,12 @@ class EndeffectorPose(ArmPosition):
         xyz_validated = np.allclose(
             a=intended_pose_vector[:3],
             b=estimated_ee_pose_vector[:3],
-            rtol=tolerance["xyz_atol"],
+            atol=tolerance["xyz_atol"],
         )
         rpy_validated = np.allclose(
             a=intended_pose_vector[3:6],
             b=estimated_ee_pose_vector[3:6],
-            rtol=tolerance["rpy_atol"],
+            atol=tolerance["rpy_atol"],
         )
         if xyz_validated and rpy_validated:
             validated_positions = new_joint_positions_sent_to_hardware
