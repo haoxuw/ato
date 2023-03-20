@@ -17,7 +17,7 @@ from mesh.model_structure.segment import bone_augmented
 class BoneSeparable(bone_augmented.BoneAugmented):
     def __get_height_radius__(self):
         radius = self.segment_configs.structural.BoneRadius / 2
-        height = radius * 4
+        height = radius * 2.5  # not too tall for dragon head gripper
         distance = radius / 2
         return radius, height, distance
 
