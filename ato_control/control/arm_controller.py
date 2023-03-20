@@ -24,7 +24,7 @@ import numpy as np
 from control import arm_position, arm_trajectory, ps4_joystick, raspberry_pi
 from control.config_and_enums.arm_connection_config import (
     ActuatorPurpose,
-    SegmentConfigTypes,
+    ArmConnectionAttributes,
     ServoConnectionConfig,
 )
 from control.config_and_enums.controller_enums import ControllerStates, SolverMode
@@ -111,8 +111,12 @@ class ArmController:
 
         current_dir = pathlib.Path(__file__).parent
         urdf_filename = os.path.join(
-            current_dir, "..", "ato_3_seg.urdf"
-        )  # todo add 2 seg, move to urdf folder, add to arm connection config
+            current_dir,
+            "..",
+            "..",
+            "urdf",
+            arm_segments_config[ArmConnectionAttributes.URDF_FILENAME],
+        )
         arm_position.EndeffectorPose.set_robot_chain_filename(
             urdf_filename=urdf_filename
         )
@@ -576,7 +580,9 @@ class ArmController:
         indexed_servo_configs = []
         indexed_segment_lengths = []
 
-        num_segments = max(arm_segments_config.keys()) + 1
+        num_segments = (
+            max((key for key in arm_segments_config.keys() if isinstance(key, int))) + 1
+        )
         for segment_id in range(num_segments):
             if segment_id < 0:
                 # gripper
@@ -586,10 +592,10 @@ class ArmController:
             ), f"{segment_id} in {arm_segments_config}"
             segment_config = arm_segments_config[segment_id]
             assert (
-                SegmentConfigTypes.PHYSICAL_LENGTH in segment_config
-            ), f"{SegmentConfigTypes.PHYSICAL_LENGTH} in {segment_config}"
+                ArmConnectionAttributes.PHYSICAL_LENGTH in segment_config
+            ), f"{ArmConnectionAttributes.PHYSICAL_LENGTH} in {segment_config}"
             indexed_segment_lengths.append(
-                segment_config[SegmentConfigTypes.PHYSICAL_LENGTH]
+                segment_config[ArmConnectionAttributes.PHYSICAL_LENGTH]
             )
             for enabler_axis in [ActuatorPurpose.ROLL, ActuatorPurpose.PITCH]:
                 assert (
@@ -622,7 +628,9 @@ class ArmController:
             segment_id=-1, enabler_axis=ActuatorPurpose.GRIPPER
         )
         servo_config = arm_segments_config[-1][ActuatorPurpose.GRIPPER]
-        gripper_length = arm_segments_config[-1][SegmentConfigTypes.PHYSICAL_LENGTH]
+        gripper_length = arm_segments_config[-1][
+            ArmConnectionAttributes.PHYSICAL_LENGTH
+        ]
         servo_obj = servo_config.servo_class(
             unique_name=unique_name,
             pi_obj=pi_obj,
@@ -1039,7 +1047,8 @@ class ArmController:
         return f"{time_str} @activated_segment_ids={self.activated_segment_ids} $velocity deg/ms={self.actuator_velocity} {self.frame_rate}hz\n{actuator_states}\nMath-based EE estimate={math_based_current_pose}\n"
 
     def _get_ik_cache_file_path(self, ik_cache_filepath_prefix):
-        return os.path.expanduser(f"{ik_cache_filepath_prefix}_ik_cache.npy")
+        arm_config_name = "ato_3_seg_270_deg"
+        return os.path.expanduser(f"{ik_cache_filepath_prefix}_{arm_config_name}.npy")
 
     # the Sequence_Index would match self._indexed_ variables
     def __get_indexed_actuator_positions(self):

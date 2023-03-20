@@ -11,8 +11,8 @@
 
 from control.config_and_enums.arm_connection_config import (
     ActuatorPurpose,
+    ArmConnectionAttributes,
     PiHeaderIdToBCM,
-    SegmentConfigTypes,
     ServoConnectionConfig,
 )
 from control.servo_ds3218 import ServoDs3218
@@ -26,8 +26,10 @@ GripperLength = 147
 # servo_max_position should be configured according to which flavor of the arm was assembled
 # use (-130, 130) instead of (0, 270) on rotation_range to prevent damages from overshooting rotation
 arm_6_axis = {
+    ArmConnectionAttributes.ARM_NAME: "ARM_6_AXIS_270_DEG",
+    ArmConnectionAttributes.URDF_FILENAME: "ato_3_seg_270_deg.urdf",
     0: {
-        SegmentConfigTypes.PHYSICAL_LENGTH: SegmentLength,
+        ArmConnectionAttributes.PHYSICAL_LENGTH: SegmentLength,
         ActuatorPurpose.ROLL: ServoConnectionConfig(
             (
                 ActuatorPurpose.ROLL,
@@ -50,7 +52,7 @@ arm_6_axis = {
         ),
     },
     1: {
-        SegmentConfigTypes.PHYSICAL_LENGTH: SegmentLength,
+        ArmConnectionAttributes.PHYSICAL_LENGTH: SegmentLength,
         ActuatorPurpose.ROLL: ServoConnectionConfig(
             (
                 ActuatorPurpose.ROLL,
@@ -73,7 +75,7 @@ arm_6_axis = {
         ),
     },
     2: {
-        SegmentConfigTypes.PHYSICAL_LENGTH: SegmentLength,
+        ArmConnectionAttributes.PHYSICAL_LENGTH: SegmentLength,
         ActuatorPurpose.ROLL: ServoConnectionConfig(
             (
                 ActuatorPurpose.ROLL,
@@ -96,7 +98,7 @@ arm_6_axis = {
         ),
     },
     -1: {
-        SegmentConfigTypes.PHYSICAL_LENGTH: GripperLength,
+        ArmConnectionAttributes.PHYSICAL_LENGTH: GripperLength,
         ActuatorPurpose.GRIPPER: ServoConnectionConfig(
             (
                 ActuatorPurpose.GRIPPER,
@@ -112,13 +114,15 @@ arm_6_axis = {
 
 
 # Copied from the StructuralConfigsSi's configuration when generating mesh
-SegmentLength = 210
+SegmentLength = 200
 GripperLength = 147
 # servo_max_position should be configured according to which flavor of the arm was assembled
 # use (-85, 85) instead of (0, 180) on rotation_range to prevent damages from overshooting rotation
 arm_4_axis = {
+    ArmConnectionAttributes.ARM_NAME: "ARM_6_AXIS_180_DEG",
+    ArmConnectionAttributes.URDF_FILENAME: "ato_2_seg_180_deg.urdf",
     0: {
-        SegmentConfigTypes.PHYSICAL_LENGTH: SegmentLength,
+        ArmConnectionAttributes.PHYSICAL_LENGTH: SegmentLength,
         ActuatorPurpose.ROLL: ServoConnectionConfig(
             (
                 ActuatorPurpose.ROLL,
@@ -141,7 +145,7 @@ arm_4_axis = {
         ),
     },
     1: {
-        SegmentConfigTypes.PHYSICAL_LENGTH: SegmentLength,
+        ArmConnectionAttributes.PHYSICAL_LENGTH: SegmentLength,
         ActuatorPurpose.ROLL: ServoConnectionConfig(
             (
                 ActuatorPurpose.ROLL,
@@ -164,7 +168,7 @@ arm_4_axis = {
         ),
     },
     -1: {
-        SegmentConfigTypes.PHYSICAL_LENGTH: GripperLength,
+        ArmConnectionAttributes.PHYSICAL_LENGTH: GripperLength,
         ActuatorPurpose.GRIPPER: ServoConnectionConfig(
             (
                 ActuatorPurpose.GRIPPER,
