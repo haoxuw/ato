@@ -9,6 +9,18 @@
 # MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.
 # See more details in the LICENSE folder.
 
-wget https://printable-mesh.s3.us-east-2.amazonaws.com/master/BoneAugmented_urdf_mesh.stl -O /tmp/BoneAugmented_urdf_mesh.stl
-wget https://printable-mesh.s3.us-east-2.amazonaws.com/master/JointAugmented_urdf_mesh.stl -O /tmp/JointAugmented_urdf_mesh.stl
-wget https://printable-mesh.s3.us-east-2.amazonaws.com/master/GripperDragonWithServo_urdf_mesh.stl -O /tmp/GripperDragonWithServo_urdf_mesh.stl
+set -e
+
+FOLDER=pitch_range_270
+
+mkdir -p "/tmp/${FOLDER}"
+wget https://printable-mesh.s3.us-east-2.amazonaws.com/${FOLDER}/BoneAugmented_urdf_mesh.stl -O /tmp/${FOLDER}/BoneAugmented_urdf_mesh.stl
+wget https://printable-mesh.s3.us-east-2.amazonaws.com/${FOLDER}/JointAugmented_urdf_mesh.stl -O /tmp/${FOLDER}/JointAugmented_urdf_mesh.stl
+wget https://printable-mesh.s3.us-east-2.amazonaws.com/${FOLDER}/GripperDragonWithServo_urdf_mesh.stl -O /tmp/${FOLDER}/GripperDragonWithServo_urdf_mesh.stl
+
+FOLDER=pitch_range_180
+
+mkdir -p "/tmp/${FOLDER}"
+wget https://printable-mesh.s3.us-east-2.amazonaws.com/${FOLDER}/BoneAugmented_urdf_mesh.stl -O /tmp/${FOLDER}/BoneAugmented_urdf_mesh.stl
+wget https://printable-mesh.s3.us-east-2.amazonaws.com/${FOLDER}/JointAugmented_urdf_mesh.stl -O /tmp/${FOLDER}/JointAugmented_urdf_mesh.stl
+wget https://printable-mesh.s3.us-east-2.amazonaws.com/${FOLDER}/GripperDragonWithServo_urdf_mesh.stl -O /tmp/${FOLDER}/GripperDragonWithServo_urdf_mesh.stl

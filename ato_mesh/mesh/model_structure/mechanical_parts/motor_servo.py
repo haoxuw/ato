@@ -137,7 +137,11 @@ class ServoMotor(motor_base.MotorBase):
 
         height_offset = self.motor_configs.WireTunnelHeight * (2**0.5)
         distance_height = self.motor_configs.Height  # arbitrarily far
-        distance_length = distance_height * 2  # makes a 1:2:sqrt(5) triangle
+        if self.segment_configs.structural.PitchRange == 270:
+            # defined arbitrarily
+            distance_length = distance_height * 2  # makes a 1:2:sqrt(5) triangle
+        else:
+            distance_length = distance_height  # makes a 1:4:sqrt(17) triangle
         wire_exit_points = [
             (-self.motor_configs.Length / 2, -self.motor_configs.Height / 2),
             (

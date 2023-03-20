@@ -3,14 +3,14 @@
     <visual>
       <origin rpy="0 0 0" xyz="0 0 0"/>
       <geometry>
-      <mesh filename="file:///tmp/BoneAugmented_urdf_mesh.stl"/>
+      <mesh filename="file:///tmp/pitch_range_270/BoneAugmented_urdf_mesh.stl"/>
       </geometry>
     </visual>
   </link>
 
   <joint name="base_link_to_joint_1" type="revolute">
     <axis xyz="0 0 1"/>
-    <limit lower="-1.5708" upper="3.14159" effort="1.0" velocity="1.0"/>
+    <limit lower="-2.35619" upper="2.35619" effort="1.0" velocity="1.0"/>
     <parent link="base_link"/>
     <child link="joint_1"/>
     <origin xyz="0 0 0" rpy="0 0 0"/>
@@ -20,7 +20,7 @@
     <visual>
       <origin rpy="0 0 0" xyz="0 0 0"/>
       <geometry>
-      <mesh filename="file:///tmp/JointAugmented_urdf_mesh.stl"/>
+      <mesh filename="file:///tmp/pitch_range_270/JointAugmented_urdf_mesh.stl"/>
       </geometry>
     </visual>
   </link>
@@ -37,14 +37,14 @@
     <visual>
       <origin rpy="0 0 0" xyz="0 0 0"/>
       <geometry>
-      <mesh filename="file:///tmp/BoneAugmented_urdf_mesh.stl"/>
+      <mesh filename="file:///tmp/pitch_range_270/BoneAugmented_urdf_mesh.stl"/>
       </geometry>
     </visual>
   </link>
 
   <joint name="bone_1_to_joint_2" type="revolute">
     <axis xyz="0 0 1"/>
-    <limit lower="-1.5708" upper="3.14159" effort="1.0" velocity="1.0"/>
+    <limit lower="-2.35619" upper="2.35619" effort="1.0" velocity="1.0"/>
     <parent link="bone_1"/>
     <child link="joint_2"/>
     <origin xyz="0 0 0" rpy="0 0 0"/>
@@ -54,7 +54,7 @@
     <visual>
       <origin rpy="0 0 0" xyz="0 0 0"/>
       <geometry>
-      <mesh filename="file:///tmp/JointAugmented_urdf_mesh.stl"/>
+      <mesh filename="file:///tmp/pitch_range_270/JointAugmented_urdf_mesh.stl"/>
       </geometry>
     </visual>
   </link>
@@ -71,14 +71,14 @@
     <visual>
       <origin rpy="0 0 0" xyz="0 0 0"/>
       <geometry>
-      <mesh filename="file:///tmp/BoneAugmented_urdf_mesh.stl"/>
+      <mesh filename="file:///tmp/pitch_range_270/BoneAugmented_urdf_mesh.stl"/>
       </geometry>
     </visual>
   </link>
 
   <joint name="bone_2_to_joint_3" type="revolute">
     <axis xyz="0 0 1"/>
-    <limit lower="-1.5708" upper="3.14159" effort="1.0" velocity="1.0"/>
+    <limit lower="-2.35619" upper="2.35619" effort="1.0" velocity="1.0"/>
     <parent link="bone_2"/>
     <child link="joint_3"/>
     <origin xyz="0 0 0" rpy="0 0 0"/>
@@ -88,7 +88,7 @@
     <visual>
       <origin rpy="0 0 0" xyz="0 0 0"/>
       <geometry>
-      <mesh filename="file:///tmp/JointAugmented_urdf_mesh.stl"/>
+      <mesh filename="file:///tmp/pitch_range_270/JointAugmented_urdf_mesh.stl"/>
       </geometry>
     </visual>
   </link>
@@ -105,7 +105,7 @@
     <visual>
       <origin rpy="0 0 0" xyz="0 0 0"/>
       <geometry>
-      <mesh filename="file:///tmp/GripperDragonWithServo_urdf_mesh.stl"/>
+      <mesh filename="file:///tmp/pitch_range_270/GripperDragonWithServo_urdf_mesh.stl"/>
       </geometry>
     </visual>
   </link>

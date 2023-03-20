@@ -31,7 +31,9 @@ class PiHeaderIdToBCM:
 
 
 @dataclass
-class SegmentConfigTypes:
+class ArmConnectionAttributes:
+    ARM_NAME = "ARM_NAME"
+    URDF_FILENAME = "URDF_FILENAME"
     L2R2 = "L2R2"
     PHYSICAL_LENGTH = "PHYSICAL_LENGTH"
 
