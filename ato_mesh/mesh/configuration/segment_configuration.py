@@ -91,7 +91,7 @@ class StructuralConfigsSi180:
     BoltOffsetCoefficientZTop: float = 1.74  # less is upwards
     BoltOffsetCoefficientZDown: float = 1.74  # less is downwards
 
-    SurfaceGive: float = 0.2
+    SurfaceGive: float = 0.3
     MountUnitSize: float = 90
 
     JointSphereHolders = [
