@@ -100,7 +100,11 @@ class ActuatorPositions(ArmPosition):
     rotation_ranges = None
 
     def __init__(
-        self, actuator_positions=None, joint_positions=None, gripper_position=None
+        self,
+        actuator_positions=None,
+        joint_positions=None,
+        gripper_position=None,
+        expected_pose=None,
     ) -> None:
         if actuator_positions is not None:
             assert joint_positions is None
@@ -111,6 +115,7 @@ class ActuatorPositions(ArmPosition):
             assert joint_positions is not None
             self.set(sequence=joint_positions)
             self.__gripper_position = gripper_position
+        self.expected_pose = expected_pose
 
     @classmethod
     def is_ready(cls):
@@ -464,7 +469,7 @@ class EndeffectorPose(ArmPosition):
         solver_mode: SolverMode,
         initial_joint_positions=None,  # excludes gripper position
         skip_validation=False,
-    ):
+    ) -> ActuatorPositions:
         xyz = target_pose.xyz
         rpy = target_pose.rpy
         if initial_joint_positions is None:
@@ -500,7 +505,9 @@ class EndeffectorPose(ArmPosition):
                 orientation_mode=orientation_mode,
             )
         except Exception as e:
-            logging.warning(f"Skipped IK for {orientation_mode}, exception: {e}")
+            logging.warning(
+                f"Skipped IK for {orientation_mode}, exception: {e}. orientation_mode == {orientation_mode} initial_position == {initial_position}"
+            )
             return None
 
         joint_positions = (
@@ -508,7 +515,7 @@ class EndeffectorPose(ArmPosition):
         )  # [1:7] to remove base_link and gripper link
 
         if not skip_validation:
-            joint_positions, _ = EndeffectorPose.validate_ik_fk(
+            joint_positions, expected_pose = EndeffectorPose.validate_ik_fk(
                 robot_chain=robot_chain,
                 intended_pose_vector=target_pose.pose,
                 new_joint_positions_sent_to_hardware=joint_positions,
@@ -519,6 +526,7 @@ class EndeffectorPose(ArmPosition):
             return ActuatorPositions(
                 joint_positions=joint_positions,
                 gripper_position=target_pose.gripper_position,
+                expected_pose=expected_pose,
             )
 
     @staticmethod
@@ -526,10 +534,6 @@ class EndeffectorPose(ArmPosition):
         robot_chain,
         intended_pose_vector,
         new_joint_positions_sent_to_hardware: collections.abc.Sequence,
-        tolerance={
-            "xyz_atol": 5,  # mm
-            "rpy_atol": 5,  # degrees
-        },
         use_ikpy=True,
     ):
         if use_ikpy:
@@ -544,21 +548,38 @@ class EndeffectorPose(ArmPosition):
             ).forward_kinematics_math_based()
             estimated_ee_pose_vector = estimated_ee_pose["endeffector_pose_intrinsic"]
 
-        xyz_validated = np.allclose(
-            a=intended_pose_vector[:3],
-            b=estimated_ee_pose_vector[:3],
-            atol=tolerance["xyz_atol"],
-        )
-        rpy_validated = np.allclose(
-            a=intended_pose_vector[3:6],
-            b=estimated_ee_pose_vector[3:6],
-            atol=tolerance["rpy_atol"],
-        )
-        if xyz_validated and rpy_validated:
+        if EndeffectorPose.pose_all_close(
+            intended_pose_vector, estimated_ee_pose_vector
+        ):
             validated_positions = new_joint_positions_sent_to_hardware
         else:
             validated_positions = None
         return validated_positions, estimated_ee_pose_vector
+
+    @staticmethod
+    def pose_all_close(
+        pose_a,
+        pose_b,
+        tolerance={
+            "xyz_atol": 7,  # mm
+            "rpy_atol": 7,  # degrees
+        },
+    ):
+        if pose_a is None and pose_b is None:
+            return True
+        if pose_a is None or pose_b is None:
+            return False
+        xyz_validated = np.allclose(
+            a=pose_a[:3],
+            b=pose_b[:3],
+            atol=tolerance["xyz_atol"],
+        )
+        rpy_validated = np.allclose(
+            a=pose_a[3:6],
+            b=pose_b[3:6],
+            atol=tolerance["rpy_atol"],
+        )
+        return xyz_validated and rpy_validated
 
     @staticmethod
     # Credits to ChatGPT. When asked:
@@ -599,7 +620,9 @@ class EndeffectorPose(ArmPosition):
         )
         return np.append(inferenced_actuator_positions, self.gripper_position)
 
-    def inverse_kinematics_cached(self, orientation=SolverMode.FORWARD):
+    def inverse_kinematics_cached(
+        self, orientation=SolverMode.FORWARD
+    ) -> ActuatorPositions:
         if orientation == SolverMode.FORWARD:
             orientation = (-90, 0, 0)
             evaluation_unit = self.ik_caches["evaluation_unit"]
