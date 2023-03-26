@@ -46,7 +46,7 @@ class ArmController:
         ),  # angular velocity
         cartesian_velocities_mm__per_ms=tuple(i * 0.01 for i in range(1, 10)),
         initial_velocity_level=2,
-        use_cached_ik=True,
+        use_cached_ik=False,
         ik_cache_filepath_prefix="~/.ato/ik_cache",
         home_folder_path="~/.ato/",
     ):
@@ -394,15 +394,16 @@ class ArmController:
             initial_joint_positions = None
 
         target_positions = None
-        positions_delta, resulted_pose_vector = (None, None)
+        expected_pose = None
+        positions_delta = None
 
         for solver_mode in self.__solver_priorities:
             if (
                 self._use_cached_ik
+                and self.ik_cache_available
                 and self.__solver_priorities == (SolverMode.FORWARD,)
                 and self.num_segments == 3
             ):  # todo: ik_cache only support forward mode 3 segments arm for now
-                assert self.ik_cache_available
                 target_positions = target_pose.inverse_kinematics_cached()
             else:
                 target_positions = arm_position.EndeffectorPose.inverse_kinematics_ikpy(
@@ -413,6 +414,7 @@ class ArmController:
                     skip_validation=skip_validation,
                 )
             if target_positions is not None:
+                expected_pose = target_positions.expected_pose
                 positions_delta = target_positions.actuator_positions - np.array(
                     self.__get_indexed_actuator_positions()
                 )
@@ -443,9 +445,7 @@ class ArmController:
                 )
                 break
             else:
-                logging.debug(
-                    f"Failed to solve @{solver_mode}: {resulted_pose_vector} != {target_pose.pose}"
-                )
+                logging.debug(f"Failed to solve @{solver_mode}")
 
         # update perf stats
         ik_solving_time = (datetime.now() - start_time).total_seconds() * 1000.0
@@ -458,7 +458,7 @@ class ArmController:
             ) / (self.solver_perf_stats["count"] + 1)
         self.solver_perf_stats["count"] += 1
         logging.debug(self.solver_perf_stats)
-        return positions_delta  # , resulted_pose_vector
+        return positions_delta, expected_pose
 
     def move_to_installation_position(self):
         for servo in self._indexed_servo_objs:
@@ -703,8 +703,8 @@ class ArmController:
                 logging.info(f"Stopped to play trajectory")
 
     def __update_intended_pose_to_current_pose(self, override_pose=None):
-        self._intended_pose = (
-            arm_position.EndeffectorPose(pose=self.__get_endeffector_pose())
+        self._intended_pose = arm_position.EndeffectorPose(
+            pose=self.__get_endeffector_pose()
             if override_pose is None
             else override_pose
         )
@@ -732,27 +732,34 @@ class ArmController:
             self.__controller_states[ControllerStates.CURRENT_MODE]
             == ControllerStates.IN_CARTESIAN_MODE
         ):
-            target_pose = self._parse_movement_updates_in_cartesian_space(
+            intended_pose = self._parse_movement_updates_in_cartesian_space(
                 time_delta_ms=time_delta_ms,
             )
-            if target_pose is None:
+            if intended_pose is None:
                 # only move if there's user input, to prevent out of control scenario
-                pass  # to the end of function
+                # but reset intended pose to recenter
+                self.__update_intended_pose_to_current_pose()
             else:
-                positions_delta = self.__solve_valid_movements_from_target_pose(
-                    target_pose=target_pose, time_delta_ms=time_delta_ms
+                (
+                    positions_delta,
+                    expected_pose,
+                ) = self.__solve_valid_movements_from_target_pose(
+                    target_pose=intended_pose, time_delta_ms=time_delta_ms
                 )
 
                 if positions_delta is None:  # no solution, then follow momentum
                     positions_delta = self.__moving_towards_positions_delta
                 else:  # has solution, then update momentum
                     self.__moving_towards_positions_delta = positions_delta
+                    assert expected_pose is not None
+                    self._intended_pose = arm_position.EndeffectorPose(
+                        pose=expected_pose
+                    )
 
                 self._move_servos_by_joint_space_delta(
                     joint_positions_delta=self.__moving_towards_positions_delta
                 )
-                # update intended pose
-                self._intended_pose = target_pose
+                self._intended_pose = intended_pose
 
         elif (
             self.__controller_states[ControllerStates.CURRENT_MODE]
@@ -876,7 +883,7 @@ class ArmController:
                 self.save_controller_states(
                     dry_run=not self.__auto_save_controller_states_to_file
                 )
-                last = current
+                last = datetime.now()
             time.sleep(interval_ms / 1000)
         self.__to_stop_clock = False
         logging.info(f"Thread for Arm Controller stopped.")
