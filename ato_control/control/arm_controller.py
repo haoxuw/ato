@@ -172,6 +172,7 @@ class ArmController:
         self.ready = True
 
     def reset_input_states(self):
+        # to be override
         return
 
     @staticmethod
@@ -214,6 +215,16 @@ class ArmController:
 
     @property
     def controller_modes(self):
+        """
+        - IN_CARTESIAN_MODE
+        - Under development and disabled -- limited functionality with preformings to be improved
+        - IN_JOINT_SPACE_MODE
+        - Control each servo motor individually
+        - IN_SETTING_MODE
+        - Calibrating between physical and logical position of motors, change velocity
+        - IN_TRAJECTORY_EDITING_MODE
+        - To create a trajectory, either by setting waypoints and pauses, or recording one live.
+        """
         return [
             ControllerStates.IN_CARTESIAN_MODE,
             ControllerStates.IN_JOINT_SPACE_MODE,
@@ -889,8 +900,8 @@ class ArmController:
         logging.info(f"Thread for Arm Controller stopped.")
 
     def __refresh_states_display(self):
-        states = "\n".join([str(self.joystick_obj), str(self)])
-        logging.info(states)
+        logging.info(str(self.joystick_obj))
+        logging.info(str(self))
 
     @property
     def trajectory_in_editing(self):

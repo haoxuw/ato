@@ -20,6 +20,7 @@ class ArmControllerJoystick(arm_controller.ArmController):
         super().__init__(*args, **kwargs)
 
     def reset_input_states(self):
+        super().reset_input_states()
         self._input_states = {
             JoystickAxis.LEFT_HORIZONTAL: None,  # along X axis, i.e. shift towards left/right
             JoystickAxis.LEFT_VERTICAL: None,  # along Y axis, i.e. shift backward/forward

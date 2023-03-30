@@ -9,6 +9,8 @@
 # See more details in the LICENSE folder.
 
 import argparse
+import glob
+import logging
 import time
 
 from control import (
@@ -33,14 +35,14 @@ def get_args():
         "--input_js",
         type=int,
         dest="input_js",
-        default=0,
+        default=None,
         help="Specify the integer id of the js# device. e.g. 3 maps into /dev/input/js3",
     )
     parser.add_argument(
         "-v",
-        "--visualize",
+        "--disable_visualization",
         dest="visualize",
-        action="store_true",
+        action="store_false",
         help="If use simple matlab plots to visualize the arm.",
     )
     parser.add_argument(
@@ -87,6 +89,20 @@ def get_args():
     return parser.parse_args()
 
 
+def resolve_input_js(args):
+    try:
+        if args.input_js is None:
+            devices = glob.glob("/dev/input/js*")
+            devices.sort()
+            return devices[-1]
+        else:
+            return f"/dev/input/js{str(args.input_js)}"
+    except Exception as e:
+        logging.warning(
+            f"Failed to resolve the joystick device /dev/input/js*, exception: {e}"
+        )
+
+
 def create_arm_controller_obj(args, for_training=False, generate_ik_cache=0):
     if args.arm_segments_config == "arm_4_axis":
         arm_segments_config = arm_4_axis
@@ -98,7 +114,12 @@ def create_arm_controller_obj(args, for_training=False, generate_ik_cache=0):
         )
 
     pi = raspberry_pi.RaspberryPi()
-    joystick = ps4_joystick.Ps4Joystick(interface=f"/dev/input/js{str(args.input_js)}")
+    input_js = resolve_input_js(args=args)
+    if input_js is None:
+        raise Exception(
+            "No joystick controller device found."
+        )
+    joystick = ps4_joystick.Ps4Joystick(interface=input_js)
     if for_training:
         arm_ctl = arm_controller_ml_training.ArmControllerMlTraining(
             frame_rate=args.frame_rate,
