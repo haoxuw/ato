@@ -15,6 +15,11 @@ import numpy as np
 from control import arm_controller, arm_position
 from control.config_and_enums.controller_enums import SolverMode
 
+#### Generate cache to improve responsiveness when running on device
+# > $ ./ato_control/scripts/activate_arm.sh -j 4 -v --generate_ik_cache --evaluation_unit 4
+
+#### Performance and sanity testing
+# > $ cd ./ato_control && python -m pytest tests/ --profile-svg -k test_generate_ik_cache -v -s
 
 # controlling arm with cached IK (rather than solving on the fly) has two main benefits
 # 1. reduce computation delay, especially when running on device

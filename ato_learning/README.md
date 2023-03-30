@@ -1,3 +1,5 @@
+# This package is currently deprecated due to performance issue
+
 # Prerequisites
 
 ## Install Cuda GPU support

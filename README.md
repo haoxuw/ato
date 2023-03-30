@@ -44,7 +44,7 @@ list of neat features
    * Control with PS4 controller
    * Visualized arm simulation using matlab plots
    * Trajectory replay
- * learning
+ * learning -- deprecated due to performance issue
    * Training auto save, modify data/lr and continue
  ## Try it out!
 

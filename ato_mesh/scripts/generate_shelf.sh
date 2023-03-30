@@ -15,7 +15,7 @@ SCRIPT_FILE_PATH=$(readlink -f ${BASH_SOURCE[0]})
 SCRIPT_FOLDER_PATH=$(dirname ${SCRIPT_FILE_PATH})
 
 pushd "${SCRIPT_FOLDER_PATH}/../" > /dev/null
-source ./scripts/setup_venv.sh > /dev/null
+source ./scripts/setup_venv.sh
 
 mkdir -p generated
 python -m mesh $@

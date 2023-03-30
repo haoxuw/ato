@@ -121,9 +121,18 @@ class Ps4Joystick(Controller, InputDeviceInterface):
         mapping = dict(
             zip(
                 [Button.UP, Button.RIGHT, Button.DOWN, Button.LEFT],
-                self.arm_controller_obj.controller_modes,
+                [
+                    ControllerStates.IN_CARTESIAN_MODE,
+                    ControllerStates.IN_JOINT_SPACE_MODE,
+                    ControllerStates.IN_SETTING_MODE,
+                    ControllerStates.IN_TRAJECTORY_EDITING_MODE,
+                ],
             )
         )
+        # todo: remove this block, which temporary siables cartesian mode
+        # currently secretly bypass with when flood logging is enabled
+        if not self.controller_states[ControllerStates.LOG_INFO_EACH_TENTHS_SECOND]:
+            mapping[Button.UP] = ControllerStates.IN_JOINT_SPACE_MODE
         return mapping
 
     def __update_input_states(self, key, value):
@@ -171,6 +180,8 @@ class Ps4Joystick(Controller, InputDeviceInterface):
 
     def on_circle_press(self):
         self.__update_input_states(key=Button.CIRCLE, value=True)
+        if self.in_trajectory_editing_mode:
+            self._arm_controller_obj.reset_trajectory_in_editing()
         logging.debug("on_circle_press")
 
     def on_circle_release(self):
@@ -370,10 +381,9 @@ class Ps4Joystick(Controller, InputDeviceInterface):
     def on_R3_release(self):
         """R3 joystick is released after the click. This event is only detected when connecting without ds4drv"""
         self.__joystick_internal_states[Button.R3] = False
-        if self.in_trajectory_editing_mode:
-            self._arm_controller_obj.replay_trajectory()  # todo create trajectory mode
-        elif self.in_cartesian_mode:
+        if self.in_cartesian_mode:
             self._arm_controller_obj.switch_forward_orientation_mode()
+        self._arm_controller_obj.replay_trajectory()
         logging.debug("on_R3_release")
 
     def on_options_press(self):

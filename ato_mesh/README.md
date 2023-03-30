@@ -20,7 +20,18 @@ In case you may want to tweak the structural design, or configuration, such as t
 
 ## Example commands to generate STL files
 
-> $ ./ato_mesh/scripts/delete_all_stl.sh && ./ato_mesh/scripts/generate_shelf.sh --export -o mesh/generated
+Tested under ubuntu 20+, python 3.9+, see examples in `ci.yaml`.
+
+### Prerequisites
+
+* python 3.9+
+* if first time running, no folder called ./ato_mesh/venv (the script would create).
+
+### Generate STL files
+
+> $ ./ato_mesh/scripts/generate_shelf.sh --export -o mesh/generated
+
+You sure see logs printed to console as color green. The .stl files would be located under `./ato_mesh/mesh/generated/`
 
 ## Code architecture
 
