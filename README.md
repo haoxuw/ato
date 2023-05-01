@@ -2,6 +2,10 @@
 
 ## What is this?
 
+[![Simple Demo](https://i9.ytimg.com/vi_webp/LdU0oIZtUVM/mq3.webp?sqp=CLDWvKIG-oaymwEmCMACELQB8quKqQMa8AEB-AH-CYAC0AWKAgwIABABGGUgYShPMA8=&rs=AOn4CLCH650MQOhXktivxZjBI3QTLvg4UQ)](https://www.youtube.com/watch?v=LdU0oIZtUVM)
+
+See a video demo by clicking the above image.
+
 Ato is an open-source robotic arm that can be built at home with a $200 budget.
 
 ## Demos
