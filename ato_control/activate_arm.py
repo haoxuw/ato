@@ -116,9 +116,7 @@ def create_arm_controller_obj(args, for_training=False, generate_ik_cache=0):
     pi = raspberry_pi.RaspberryPi()
     input_js = resolve_input_js(args=args)
     if input_js is None:
-        raise Exception(
-            "No joystick controller device found."
-        )
+        raise Exception("No joystick controller device found.")
     joystick = ps4_joystick.Ps4Joystick(interface=input_js)
     if for_training:
         arm_ctl = arm_controller_ml_training.ArmControllerMlTraining(
