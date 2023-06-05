@@ -198,6 +198,8 @@ class TrajectoryActuatorPositions(ArmTrajectory):
         assert isinstance(target_trajectory, TrajectoryActuatorPositions), type(
             target_trajectory
         )
+        if len(target_trajectory.trajectory) < 1:
+            return None
         _, first_position = target_trajectory.trajectory[0]
         max_duration = TrajectoryActuatorPositions.calculate_duration_needed(
             start=current_positions, destination=first_position, velocities=velocities

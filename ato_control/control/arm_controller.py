@@ -45,7 +45,7 @@ class ArmController:
             i * 0.01 for i in range(1, 10)
         ),  # angular velocity
         cartesian_velocities_mm__per_ms=tuple(i * 0.01 for i in range(1, 10)),
-        initial_velocity_level=2,
+        initial_velocity_level=6,
         use_cached_ik=False,
         ik_cache_filepath_prefix="~/.ato/ik_cache",
         home_folder_path="~/.ato/",
@@ -667,6 +667,8 @@ class ArmController:
         )
 
     def queue_up_trajectory(self, trajectory: arm_trajectory.ArmTrajectory):
+        if trajectory is None:
+            return
         if isinstance(trajectory, arm_trajectory.TrajectoryEndeffectorPose):
             trajectory = trajectory.inverse_kinematics()
         # __trajectory_to_play is checked each cycle

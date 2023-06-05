@@ -133,6 +133,9 @@ class Ps4Joystick(Controller, InputDeviceInterface):
         # currently secretly bypass with when flood logging is enabled
         if not self.controller_states[ControllerStates.LOG_INFO_EACH_TENTHS_SECOND]:
             mapping[Button.UP] = ControllerStates.IN_JOINT_SPACE_MODE
+            mapping[
+                Button.DOWN
+            ] = ControllerStates.IN_JOINT_SPACE_MODE  # also diabling for now
         return mapping
 
     def __update_input_states(self, key, value):
