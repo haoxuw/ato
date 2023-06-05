@@ -2,7 +2,7 @@
 
 ## What is this?
 
-[![Simple Demo](https://i9.ytimg.com/vi_webp/LdU0oIZtUVM/mq3.webp?sqp=CLDWvKIG-oaymwEmCMACELQB8quKqQMa8AEB-AH-CYAC0AWKAgwIABABGGUgYShPMA8=&rs=AOn4CLCH650MQOhXktivxZjBI3QTLvg4UQ)](https://www.youtube.com/watch?v=LdU0oIZtUVM)
+[![Simple Demo](https://printable-mesh.s3.us-east-2.amazonaws.com/Thumbnail.png)](https://www.youtube.com/watch?v=LdU0oIZtUVM)
 
 See a video demo by clicking the above image.
 
