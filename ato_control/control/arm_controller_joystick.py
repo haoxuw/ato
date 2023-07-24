@@ -103,7 +103,7 @@ class ArmControllerJoystick(arm_controller.ArmController):
                 }
             return mapping[enabler_axis]
 
-    def _parse_movement_updates_in_joint_space(self, time_delta_ms, show_info):
+    def _parse_movement_updates_in_joint_space(self, time_delta_ms, show_info=None):
         joint_positions_delta = [0] * len(self._indexed_servo_names)
         # each joint is controlled by some designated_axis on the joystick
         for index, unique_name in enumerate(self._indexed_servo_names):

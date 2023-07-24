@@ -31,6 +31,11 @@ from control.config_and_enums.controller_enums import ControllerStates, SolverMo
 from control.interface_classes import servo_interface
 from matplotlib.animation import FuncAnimation
 from scipy.spatial.transform import Rotation
+from mpl_toolkits.mplot3d import Axes3D
+import numpy as np
+from numpy.linalg import solve
+import pinocchio
+from pinocchio.robot_wrapper import RobotWrapper
 
 
 class ArmController:
@@ -120,6 +125,9 @@ class ArmController:
         arm_position.EndeffectorPose.set_robot_chain_filename(
             urdf_filename=urdf_filename
         )
+
+        self.robot = RobotWrapper.BuildFromURDF(urdf_filename) # Add pinocchio wrapper
+
         self.__robot_chain = None
 
         self.frame_rate = frame_rate
@@ -209,7 +217,7 @@ class ArmController:
     def reset_controller_flags(self):
         self.__controller_states = {
             ControllerStates.LOG_INFO_EACH_TENTHS_SECOND: False,
-            ControllerStates.CURRENT_MODE: ControllerStates.DEFAULT,
+            ControllerStates.CURRENT_MODE: ControllerStates.IN_CARTESIAN_MODE,
             ControllerStates.RECORDING_ON: None,
         }
 
@@ -416,20 +424,43 @@ class ArmController:
                 and self.num_segments == 3
             ):  # todo: ik_cache only support forward mode 3 segments arm for now
                 target_positions = target_pose.inverse_kinematics_cached()
-            else:
-                target_positions = arm_position.EndeffectorPose.inverse_kinematics_ikpy(
-                    robot_chain=self.robot_chain,
-                    target_pose=target_pose,
-                    initial_joint_positions=initial_joint_positions,
-                    solver_mode=solver_mode,
-                    skip_validation=skip_validation,
-                )
-            if target_positions is not None:
                 expected_pose = target_positions.expected_pose
                 positions_delta = target_positions.actuator_positions - np.array(
                     self.__get_indexed_actuator_positions()
                 )
+            else:
+                JOINT_ID = 6  # For now set up manually
+                expected_pose = np.concatenate([target_pose.xyz, target_pose.rpy])
+                target_pose = pinocchio.SE3(pinocchio.rpy.rpyToMatrix(np.radians(target_pose.rpy)), target_pose.xyz)
 
+                q = np.radians(np.array(initial_joint_positions))
+                q = np.matrix(q).T
+                pinocchio.forwardKinematics(self.robot.model, self.robot.data, q)  # compute forward kinematics
+                current_pose = self.robot.data.oMi[-1]  # compute current end effector position
+
+                oMdes = target_pose.copy() # set a target
+
+                dMi = oMdes.actInv(self.robot.data.oMi[-1])  # find transformation between two frames
+                err = pinocchio.log(dMi).vector
+
+                J = pinocchio.computeJointJacobian(self.robot.model, self.robot.data, q, JOINT_ID)  # calculate jacobian
+                v = -J.T.dot(solve(J.dot(J.T), err))  # + damp * np.eye(6)  # calculate velocity in configuration space
+
+                target_positions = pinocchio.integrate(self.robot.model, q, v * time_delta_ms / 1000.)
+                # compute traget_positions for each joint. Per second timestep used here. (It's suggested to have a
+                # same loop rate for all the code and don't relate it to the processor of each computer. This way it
+                # does a same behaviour with any computer)
+                target_positions = np.degrees(target_positions)
+                # target_positions = arm_position.EndeffectorPose.inverse_kinematics_ikpy(
+                #     robot_chain=self.robot_chain,
+                #     target_pose=target_pose,
+                #     initial_joint_positions=initial_joint_positions,
+                #     solver_mode=solver_mode,
+                #     skip_validation=skip_validation,
+                # )
+                positions_delta = target_positions - initial_joint_positions
+
+            if target_positions is not None:
                 joint_velocity_limits = (
                     np.array(
                         [
@@ -440,6 +471,9 @@ class ArmController:
                     * self.actuator_velocity
                     * time_delta_ms
                 )
+                joint_velocity_limits = [10] * 6 #Elham: I used this joint limit for now. joint_velocity_limits has
+                # 7 elements which doesn't make sense to me. As robot only has 6 joints.
+
                 positions_normalization_ratio = np.max(
                     np.abs(positions_delta / joint_velocity_limits)
                 )
