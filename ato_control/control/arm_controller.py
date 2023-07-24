@@ -429,28 +429,42 @@ class ArmController:
                     self.__get_indexed_actuator_positions()
                 )
             else:
+                print("____________________________________________________")
                 JOINT_ID = 6  # For now set up manually
                 expected_pose = np.concatenate([target_pose.xyz, target_pose.rpy])
-                target_pose = pinocchio.SE3(pinocchio.rpy.rpyToMatrix(np.radians(target_pose.rpy)), target_pose.xyz)
+                # print("target_pose", target_pose)
 
+                print("initial_joint_positions", initial_joint_positions)
                 q = np.radians(np.array(initial_joint_positions))
                 q = np.matrix(q).T
                 pinocchio.forwardKinematics(self.robot.model, self.robot.data, q)  # compute forward kinematics
                 current_pose = self.robot.data.oMi[-1]  # compute current end effector position
 
-                oMdes = target_pose.copy() # set a target
+                oMdes = current_pose.copy() # set a target
+                oMdes.translation[2] -= 10 # just for test
+
+
+                # oMdes = current_pose.copy() # set a target
+                # oMdes.translation = -oMdes.translation + target_pose.xyz
+                # oMdes.rotation = pinocchio.Quaternion.log3(oMdes.rotation * target_pose.rpy.conjugate())#Need a small update
+                print("target: ", oMdes)
+                print("current: ", current_pose)
 
                 dMi = oMdes.actInv(self.robot.data.oMi[-1])  # find transformation between two frames
                 err = pinocchio.log(dMi).vector
 
-                J = pinocchio.computeJointJacobian(self.robot.model, self.robot.data, q, JOINT_ID)  # calculate jacobian
-                v = -J.T.dot(solve(J.dot(J.T), err))  # + damp * np.eye(6)  # calculate velocity in configuration space
+                damp = 1e-12
 
-                target_positions = pinocchio.integrate(self.robot.model, q, v * time_delta_ms / 1000.)
+                J = pinocchio.computeJointJacobian(self.robot.model, self.robot.data, q, JOINT_ID)  # calculate jacobian
+                v = -J.T.dot(solve(J.dot(J.T) + damp * np.eye(6), err))  # calculate velocity in configuration space
+
+                target_positions = pinocchio.integrate(self.robot.model, q, v * time_delta_ms / 1000)
                 # compute traget_positions for each joint. Per second timestep used here. (It's suggested to have a
                 # same loop rate for all the code and don't relate it to the processor of each computer. This way it
                 # does a same behaviour with any computer)
                 target_positions = np.degrees(target_positions)
+                print("initial_joint_positions", initial_joint_positions)
+                print("target_positions", target_positions)
                 # target_positions = arm_position.EndeffectorPose.inverse_kinematics_ikpy(
                 #     robot_chain=self.robot_chain,
                 #     target_pose=target_pose,
