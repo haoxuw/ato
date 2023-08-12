@@ -129,13 +129,6 @@ class Ps4Joystick(Controller, InputDeviceInterface):
                 ],
             )
         )
-        # todo: remove this block, which temporary siables cartesian mode
-        # currently secretly bypass with when flood logging is enabled
-        if not self.controller_states[ControllerStates.LOG_INFO_EACH_TENTHS_SECOND]:
-            mapping[Button.UP] = ControllerStates.IN_JOINT_SPACE_MODE
-            mapping[
-                Button.DOWN
-            ] = ControllerStates.IN_JOINT_SPACE_MODE  # also diabling for now
         return mapping
 
     def __update_input_states(self, key, value):
@@ -394,9 +387,9 @@ class Ps4Joystick(Controller, InputDeviceInterface):
 
     def on_options_release(self):
         if self.arm_controller_running:
-            self._arm_controller_obj.stop_controller_thread()
+            self._arm_controller_obj.stop_threads()
         else:
-            self._arm_controller_obj.start_controller_thread()
+            self._arm_controller_obj.start_threads()
         logging.debug("on_options_release")
 
     def on_share_press(self):

@@ -11,16 +11,16 @@
 
 set -e
 
-FOLDER=pitch_range_270
+for folder in pitch_range_270 pitch_range_180
+do
+  mkdir -p "/tmp/${folder}"
 
-mkdir -p "/tmp/${FOLDER}"
-wget https://printable-mesh.s3.us-east-2.amazonaws.com/${FOLDER}/BoneAugmented_urdf_mesh.stl -O /tmp/${FOLDER}/BoneAugmented_urdf_mesh.stl
-wget https://printable-mesh.s3.us-east-2.amazonaws.com/${FOLDER}/JointAugmented_urdf_mesh.stl -O /tmp/${FOLDER}/JointAugmented_urdf_mesh.stl
-wget https://printable-mesh.s3.us-east-2.amazonaws.com/${FOLDER}/GripperDragonWithServo_urdf_mesh.stl -O /tmp/${FOLDER}/GripperDragonWithServo_urdf_mesh.stl
+    for filename in BoneAugmented_urdf_mesh.stl JointAugmented_urdf_mesh.stl GripperDragonWithServo_urdf_mesh.stl
+    do
+    if [ ! -f "/tmp/${folder}/${filename}" ]; then
+      echo "Downloading ${filename} to /tmp/${folder}/${filename}"
+      wget https://printable-mesh.s3.us-east-2.amazonaws.com/${folder}/${filename} -O /tmp/${folder}/${filename}
+    fi
+    done
 
-FOLDER=pitch_range_180
-
-mkdir -p "/tmp/${FOLDER}"
-wget https://printable-mesh.s3.us-east-2.amazonaws.com/${FOLDER}/BoneAugmented_urdf_mesh.stl -O /tmp/${FOLDER}/BoneAugmented_urdf_mesh.stl
-wget https://printable-mesh.s3.us-east-2.amazonaws.com/${FOLDER}/JointAugmented_urdf_mesh.stl -O /tmp/${FOLDER}/JointAugmented_urdf_mesh.stl
-wget https://printable-mesh.s3.us-east-2.amazonaws.com/${FOLDER}/GripperDragonWithServo_urdf_mesh.stl -O /tmp/${FOLDER}/GripperDragonWithServo_urdf_mesh.stl
+done

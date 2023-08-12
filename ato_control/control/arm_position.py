@@ -17,6 +17,7 @@ from abc import ABC, abstractmethod
 
 import ikpy.chain
 import numpy as np
+import pinocchio
 from control.config_and_enums.controller_enums import SolverMode
 from scipy.spatial.transform import Rotation
 
@@ -461,6 +462,75 @@ class EndeffectorPose(ArmPosition):
         except Exception as exp:
             logging.warning(f"Failed to load ik_cache @{file_path}, due to {exp}")
             return False
+
+    @staticmethod
+    def inverse_kinematics_pinocchio(
+        robot: pinocchio.robot_wrapper.RobotWrapper,
+        target_pose,
+        time_delta_ms: int,
+        initial_joint_positions=None,  # excludes gripper position
+        log_debug=False,
+        # todo: what's the best value for the following parameters?
+        damp=1e-12,
+        eps=5,
+        speed_factor=50,
+    ) -> ActuatorPositions:
+        expected_pose = np.concatenate([target_pose.xyz, target_pose.rpy])
+
+        # [0] as the dummy_object_link, because:
+        # in the urdf, each link is represented by its anchoring position
+        # therefore the endeffector's coordinate is located on the last joint
+        # to model the position that holds the object, we added a dummy_object_link
+        joint_id = len(initial_joint_positions) + 1  # id of the dummy_object_link
+
+        joint_configuration = np.radians(np.array(list(initial_joint_positions) + [0]))
+        joint_configuration = np.matrix(joint_configuration).T
+        pinocchio.forwardKinematics(
+            robot.model, robot.data, joint_configuration
+        )  # updated in robot.data.oMi internally
+
+        if log_debug:
+            # print out the placement of each joint of the kinematic tree
+            for name, oMi in zip(robot.model.names, robot.data.oMi):
+                string = "{:<24} : {: .2f} {: .2f} {: .2f}".format(
+                    name, *oMi.translation.T.flat
+                )
+                logging.debug(string)
+        initial_pose = robot.data.oMi[-1]
+
+        # pinocchio's naming convention:
+        # oMi is origin to M (i.e. end effector) transformation, (i)nferred from joint_configuration
+        # oMdes is origin to M (i.e. end effector) transformation, (des)ired
+        oMdes = initial_pose.copy()
+        oMdes.translation = target_pose.xyz
+
+        rotation_delta = Rotation.from_euler("XYZ", target_pose.rpy, degrees=True)
+        rotation_current = Rotation.from_matrix(oMdes.rotation)
+        rotation_target: Rotation = rotation_delta * rotation_current
+        rotation_matrix = pinocchio.Jlog3(rotation_target.as_matrix())
+        oMdes.rotation = rotation_matrix
+
+        dMi = oMdes.actInv(robot.data.oMi[-1])  # find transformation between two frames
+        err = pinocchio.log(dMi).vector
+        err_norm = np.linalg.norm(err)
+        if err_norm > eps:
+            logging.debug(f"Solver error norm: {err_norm}")
+            return None
+
+        jointJacobian = pinocchio.computeJointJacobian(
+            robot.model, robot.data, joint_configuration, joint_id
+        )  # calculate jacobian
+        velocity = -jointJacobian.T.dot(
+            np.linalg.solve(jointJacobian.dot(jointJacobian.T) + damp * np.eye(6), err)
+        )  # calculate velocity in configuration space
+
+        joint_positions = pinocchio.integrate(
+            robot.model, joint_configuration, velocity * time_delta_ms / speed_factor
+        )
+        joint_positions = np.degrees(joint_positions)
+        return ActuatorPositions(
+            actuator_positions=joint_positions, expected_pose=expected_pose
+        )
 
     @staticmethod
     def inverse_kinematics_ikpy(

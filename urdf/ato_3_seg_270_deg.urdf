@@ -93,15 +93,15 @@
     </visual>
   </link>
 
-  <joint name="joint_3_to_bone_3" type="revolute">
+  <joint name="joint_3_to_endeffector" type="revolute">
     <axis xyz="1 0 0"/>
     <limit lower="-2.26893" upper="2.26893" effort="1.0" velocity="1.0"/>
     <parent link="joint_3"/>
-    <child link="bone_3"/>
+    <child link="endeffector"/>
     <origin xyz="0 0 220" rpy="0 0 0"/>
   </joint>
 
-  <link name="bone_3">
+  <link name="endeffector">
     <visual>
       <origin rpy="0 0 0" xyz="0 0 0"/>
       <geometry>
@@ -110,13 +110,15 @@
     </visual>
   </link>
 
-  <joint name="bone_3_to_endeffector" type="fixed">
-    <parent link="bone_3"/>
-    <child link="endeffector_link"/>
+  <joint name="endeffector_to_dummy_object" type="revolute">
+    <axis xyz="1 0 0"/>
+    <limit lower="0" upper="0" effort="1.0" velocity="1.0"/>
+    <parent link="endeffector"/>
+    <child link="dummy_object_link"/>
     <origin xyz="0 0 147" rpy="0 0 0"/>
   </joint>
 
-  <link name="endeffector_link">
+  <link name="dummy_object_link">
     <visual>
       <origin rpy="0 0 0" xyz="0 0 0"/>
       <geometry>

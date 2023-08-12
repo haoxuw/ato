@@ -21,6 +21,7 @@ from typing import Dict, Tuple
 
 import matplotlib.pyplot as plt
 import numpy as np
+import pinocchio
 from control import arm_position, arm_trajectory, ps4_joystick, raspberry_pi
 from control.config_and_enums.arm_connection_config import (
     ActuatorPurpose,
@@ -30,12 +31,8 @@ from control.config_and_enums.arm_connection_config import (
 from control.config_and_enums.controller_enums import ControllerStates, SolverMode
 from control.interface_classes import servo_interface
 from matplotlib.animation import FuncAnimation
+from pinocchio import robot_wrapper
 from scipy.spatial.transform import Rotation
-from mpl_toolkits.mplot3d import Axes3D
-import numpy as np
-from numpy.linalg import solve
-import pinocchio
-from pinocchio.robot_wrapper import RobotWrapper
 
 
 class ArmController:
@@ -47,11 +44,12 @@ class ArmController:
         frame_rate=100,
         auto_save_controller_states_to_file=True,
         actuator_velocities_deg_per_ms=tuple(
-            i * 0.01 for i in range(1, 10)
+            i * 0.02 for i in range(1, 10)
         ),  # angular velocity
         cartesian_velocities_mm__per_ms=tuple(i * 0.01 for i in range(1, 10)),
-        initial_velocity_level=6,
+        initial_velocity_level=3,
         use_cached_ik=False,
+        use_pinocchio_ik=True,
         ik_cache_filepath_prefix="~/.ato/ik_cache",
         home_folder_path="~/.ato/",
     ):
@@ -69,6 +67,7 @@ class ArmController:
         self._indexed_segment_lengths: Tuple[float]
         self._gripper_length: float
         self._use_cached_ik = use_cached_ik
+        self._use_pinocchio_ik = use_pinocchio_ik
         self._ik_cache_filepath_prefix = ik_cache_filepath_prefix
         if self._use_cached_ik:
             self.ik_cache_available = arm_position.EndeffectorPose.load_ik_cache(
@@ -126,7 +125,9 @@ class ArmController:
             urdf_filename=urdf_filename
         )
 
-        self.robot = RobotWrapper.BuildFromURDF(urdf_filename) # Add pinocchio wrapper
+        self.robot: pinocchio.robot_wrapper.RobotWrapper = (
+            robot_wrapper.RobotWrapper.BuildFromURDF(urdf_filename)
+        )  # Add pinocchio wrapper
 
         self.__robot_chain = None
 
@@ -203,7 +204,7 @@ class ArmController:
         # customization of home_positions via config is not allowed
         # those hard coded values works with ik cache
         if num_segments == 3:
-            return (0, 60, 0, -100, 0, -50, 0)
+            return (0, 60, 0, -100, 0, -30, 0)
             # or (0, 20, 0, -80, 0, -30, 0),
         elif num_segments == 2:
             return (0, -20, 0, -70, 0)
@@ -217,7 +218,7 @@ class ArmController:
     def reset_controller_flags(self):
         self.__controller_states = {
             ControllerStates.LOG_INFO_EACH_TENTHS_SECOND: False,
-            ControllerStates.CURRENT_MODE: ControllerStates.IN_CARTESIAN_MODE,
+            ControllerStates.CURRENT_MODE: ControllerStates.DEFAULT_MODE,
             ControllerStates.RECORDING_ON: None,
         }
 
@@ -424,57 +425,29 @@ class ArmController:
                 and self.num_segments == 3
             ):  # todo: ik_cache only support forward mode 3 segments arm for now
                 target_positions = target_pose.inverse_kinematics_cached()
+            elif self._use_pinocchio_ik:
+                target_positions = (
+                    arm_position.EndeffectorPose.inverse_kinematics_pinocchio(
+                        robot=self.robot,
+                        target_pose=target_pose,
+                        time_delta_ms=time_delta_ms,
+                        initial_joint_positions=initial_joint_positions,
+                    )
+                )
+            else:
+                # deprecated
+                target_positions = arm_position.EndeffectorPose.inverse_kinematics_ikpy(
+                    robot_chain=self.robot_chain,
+                    target_pose=target_pose,
+                    initial_joint_positions=initial_joint_positions,
+                    solver_mode=solver_mode,
+                    skip_validation=skip_validation,
+                )
+            if target_positions is not None:
                 expected_pose = target_positions.expected_pose
                 positions_delta = target_positions.actuator_positions - np.array(
                     self.__get_indexed_actuator_positions()
                 )
-            else:
-                print("____________________________________________________")
-                JOINT_ID = 6  # For now set up manually
-                expected_pose = np.concatenate([target_pose.xyz, target_pose.rpy])
-                # print("target_pose", target_pose)
-
-                print("initial_joint_positions", initial_joint_positions)
-                q = np.radians(np.array(initial_joint_positions))
-                q = np.matrix(q).T
-                pinocchio.forwardKinematics(self.robot.model, self.robot.data, q)  # compute forward kinematics
-                current_pose = self.robot.data.oMi[-1]  # compute current end effector position
-
-                oMdes = current_pose.copy() # set a target
-                oMdes.translation[2] -= 10 # just for test
-
-
-                # oMdes = current_pose.copy() # set a target
-                # oMdes.translation = -oMdes.translation + target_pose.xyz
-                # oMdes.rotation = pinocchio.Quaternion.log3(oMdes.rotation * target_pose.rpy.conjugate())#Need a small update
-                print("target: ", oMdes)
-                print("current: ", current_pose)
-
-                dMi = oMdes.actInv(self.robot.data.oMi[-1])  # find transformation between two frames
-                err = pinocchio.log(dMi).vector
-
-                damp = 1e-12
-
-                J = pinocchio.computeJointJacobian(self.robot.model, self.robot.data, q, JOINT_ID)  # calculate jacobian
-                v = -J.T.dot(solve(J.dot(J.T) + damp * np.eye(6), err))  # calculate velocity in configuration space
-
-                target_positions = pinocchio.integrate(self.robot.model, q, v * time_delta_ms / 1000)
-                # compute traget_positions for each joint. Per second timestep used here. (It's suggested to have a
-                # same loop rate for all the code and don't relate it to the processor of each computer. This way it
-                # does a same behaviour with any computer)
-                target_positions = np.degrees(target_positions)
-                print("initial_joint_positions", initial_joint_positions)
-                print("target_positions", target_positions)
-                # target_positions = arm_position.EndeffectorPose.inverse_kinematics_ikpy(
-                #     robot_chain=self.robot_chain,
-                #     target_pose=target_pose,
-                #     initial_joint_positions=initial_joint_positions,
-                #     solver_mode=solver_mode,
-                #     skip_validation=skip_validation,
-                # )
-                positions_delta = target_positions - initial_joint_positions
-
-            if target_positions is not None:
                 joint_velocity_limits = (
                     np.array(
                         [
@@ -485,8 +458,6 @@ class ArmController:
                     * self.actuator_velocity
                     * time_delta_ms
                 )
-                joint_velocity_limits = [10] * 6 #Elham: I used this joint limit for now. joint_velocity_limits has
-                # 7 elements which doesn't make sense to me. As robot only has 6 joints.
 
                 positions_normalization_ratio = np.max(
                     np.abs(positions_delta / joint_velocity_limits)
@@ -495,13 +466,9 @@ class ArmController:
                 if restrict_max_speed:
                     if positions_normalization_ratio > 1:
                         positions_delta /= positions_normalization_ratio
-                logging.debug(
-                    (
-                        "Will move with delta: ",
-                        positions_delta,
-                        positions_normalization_ratio,
-                    )
-                )
+                        logging.info(
+                            f"applied positions_normalization_ratio: {positions_normalization_ratio}"
+                        )
                 break
             else:
                 logging.debug(f"Failed to solve @{solver_mode}")
@@ -797,8 +764,10 @@ class ArmController:
                 time_delta_ms=time_delta_ms,
             )
             if intended_pose is None:
-                # only move if there's user input, to prevent out of control scenario
-                # but reset intended pose to recenter
+                # case 1: no user input
+                #   Movement: no
+                #   Reset intended: yes
+                # never move if no user input, to prevent out of control scenario
                 self.__update_intended_pose_to_current_pose()
             else:
                 (
@@ -808,18 +777,28 @@ class ArmController:
                     target_pose=intended_pose, time_delta_ms=time_delta_ms
                 )
 
-                if positions_delta is None:  # no solution, then follow momentum
-                    positions_delta = self.__moving_towards_positions_delta
-                else:  # has solution, then update momentum
+                if positions_delta is not None:
+                    # case 2: found valid movements
+                    #   Movement: yes
+                    #   Reset intended: yes
                     self.__moving_towards_positions_delta = positions_delta
                     assert expected_pose is not None
                     self._intended_pose = arm_position.EndeffectorPose(
                         pose=expected_pose
                     )
 
-                self._move_servos_by_joint_space_delta(
-                    joint_positions_delta=self.__moving_towards_positions_delta
-                )
+                    self._move_servos_by_joint_space_delta(
+                        joint_positions_delta=self.__moving_towards_positions_delta
+                    )
+                    self.__update_intended_pose_to_current_pose()
+                else:
+                    # case 3: can't solve for valid movements
+                    #   Movement: no
+                    #   Reset intended: no
+                    # if user input continues, the intented pose and actual current pose will diverge
+                    # this makes it easier recovering from bad states, i.e. states that leads to deadends
+                    pass
+
                 self._intended_pose = intended_pose
 
         elif (

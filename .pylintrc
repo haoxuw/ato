@@ -1,5 +1,6 @@
 [MESSAGES CONTROL]
 disable=
+    consider-using-f-string,
     useless-parent-delegation,
     wrong-import-order,
     dangerous-default-value,

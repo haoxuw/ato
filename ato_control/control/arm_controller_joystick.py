@@ -18,6 +18,7 @@ from control.config_and_enums.joystick_input_types import Button, JoystickAxis
 class ArmControllerJoystick(arm_controller.ArmController):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
+        self.reset_input_states()
 
     def reset_input_states(self):
         super().reset_input_states()

@@ -17,7 +17,7 @@ class ControllerStates:
 
     CURRENT_MODE = "CURRENT_MODE"  # value has to be one of those:
 
-    DEFAULT = "IN_JOINT_SPACE_MODE"
+    DEFAULT_MODE = "IN_CARTESIAN_MODE"
     IN_CARTESIAN_MODE = "IN_CARTESIAN_MODE"
 
     IN_JOINT_SPACE_MODE = "IN_JOINT_SPACE_MODE"
