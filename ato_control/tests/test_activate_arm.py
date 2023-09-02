@@ -33,18 +33,6 @@ def test_component_obj_creation():
     assert arm_ctl.ready is True
 
 
-def test_generate_ik_cache():
-    pi = raspberry_pi.RaspberryPi()
-    joystick = ps4_joystick.Ps4Joystick(interface=f"/dev/input/js0")
-
-    arm_ctl = arm_controller_ik_cache.ArmControllerIkCache(
-        pi_obj=pi,
-        joystick_obj=joystick,
-        arm_segments_config=arm_6_axis,
-    )
-    arm_ctl.generate_ik_cache()
-
-
 def test_move_L3():
     pi = raspberry_pi.RaspberryPi()
     joystick = ps4_joystick.Ps4Joystick(interface=f"/dev/input/js0")

@@ -25,6 +25,9 @@ jobs:
         pip install --pre cadquery
         pip install -r requirements.txt
         pip freeze
+    - name: Downloading supporting files
+      run: |
+        ./ato_control/scripts/download_urdf_mesh_stl.sh
     - name: Running pylint on control
       run: |
         ./ato_control/scripts/lint.sh

@@ -20,4 +20,3 @@ cd "${SCRIPT_FOLDER_PATH}/../"
 echo
 echo "Sanity passed"
 echo
-exit 0

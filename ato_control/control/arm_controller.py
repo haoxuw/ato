@@ -125,9 +125,16 @@ class ArmController:
             urdf_filename=urdf_filename
         )
 
-        self.robot: pinocchio.robot_wrapper.RobotWrapper = (
-            robot_wrapper.RobotWrapper.BuildFromURDF(urdf_filename)
-        )  # Add pinocchio wrapper
+        try:
+            self.robot: pinocchio.robot_wrapper.RobotWrapper = (
+                robot_wrapper.RobotWrapper.BuildFromURDF(urdf_filename)
+            )  # Add pinocchio wrapper
+        except Exception as e:
+            logging.warning(
+                f"Failed to load robot from urdf_filename: {urdf_filename}, {e}"
+            )
+            logging.warning(f"Inverse kinematics will not be available.")
+            self.robot = None
 
         self.__robot_chain = None
 

@@ -18,4 +18,3 @@ OUT_DIR=./generated
 echo
 echo "Sanity passed"
 echo
-exit 0
