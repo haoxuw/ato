@@ -14,7 +14,6 @@ import logging
 import time
 
 from control import (
-    arm_controller_ik_cache,
     arm_controller_joystick,
     arm_controller_ml_training,
     ps4_joystick,
@@ -50,11 +49,6 @@ def get_args():
         type=int,
         default=0,
         help="Do not run the arm, but generate training data.",
-    )
-    parser.add_argument(
-        "--generate_ik_cache",
-        action="store_true",
-        help="Do not run the arm, but generate ik cache.",
     )
     parser.add_argument(
         "--frame_rate",
@@ -103,7 +97,7 @@ def resolve_input_js(args):
         )
 
 
-def create_arm_controller_obj(args, for_training=False, generate_ik_cache=0):
+def create_arm_controller_obj(args, for_training=False):
     if args.arm_segments_config == "arm_4_axis":
         arm_segments_config = arm_4_axis
     elif args.arm_segments_config == "arm_6_axis":
@@ -121,12 +115,6 @@ def create_arm_controller_obj(args, for_training=False, generate_ik_cache=0):
     if for_training:
         arm_ctl = arm_controller_ml_training.ArmControllerMlTraining(
             frame_rate=args.frame_rate,
-            pi_obj=pi,
-            joystick_obj=joystick,
-            arm_segments_config=arm_segments_config,
-        )
-    elif generate_ik_cache > 0:
-        arm_ctl = arm_controller_ik_cache.ArmControllerIkCache(
             pi_obj=pi,
             joystick_obj=joystick,
             arm_segments_config=arm_segments_config,
@@ -158,11 +146,6 @@ def main():
             size=args.generate_training_data,
             training_data_filepath_prefix=args.training_data_filepath_prefix,
         )
-    elif args.generate_ik_cache is True:
-        arm_ctl = create_arm_controller_obj(
-            args=args, generate_ik_cache=args.generate_ik_cache
-        )
-        arm_ctl.generate_ik_cache(evaluation_unit=args.evaluation_unit)
     else:
         arm_ctl = create_arm_controller_obj(
             args=args,

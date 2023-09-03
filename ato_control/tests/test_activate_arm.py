@@ -12,7 +12,6 @@ import logging
 
 import numpy as np
 from control import (
-    arm_controller_ik_cache,
     arm_controller_joystick,
     ps4_joystick,
     raspberry_pi,
