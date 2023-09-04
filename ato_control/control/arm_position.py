@@ -15,7 +15,6 @@ import pathlib
 import sys
 from abc import ABC, abstractmethod
 
-import ikpy.chain
 import numpy as np
 import pinocchio
 from control.config_and_enums.controller_enums import SolverMode
@@ -226,9 +225,6 @@ class ActuatorPositions(ArmPosition):
             else ""
         )
 
-    # we have 3 versions of forward_kinematics, to practice and learn, we implemented one version based on ml
-    # and another base on math.
-    # finally a feature rich implementation from the ikpy package
     def forward_kinematics_ml_based(self):
         joint_positions = np.array(self.joint_positions, dtype=np.float32)
         features = ActuatorPositions.normalize_to_relu6(sequence=joint_positions)
@@ -334,28 +330,7 @@ class ActuatorPositions(ArmPosition):
             "endeffector_reference_frame": np.array(endeffector_reference_frame),
         }
 
-    # returns EndeffectorPose
-    def forward_kinematics_ikpy(self, robot_chain):
-        estimated_ee_pose_matrix_via_fk = robot_chain.forward_kinematics(
-            [
-                0,
-                *np.radians(self.__joint_positions),
-                0,
-            ]  # base_link + active_joints + dummy_gripper
-        )
-        xyz = estimated_ee_pose_matrix_via_fk[:3, 3]
-        rpy = Rotation.from_matrix(estimated_ee_pose_matrix_via_fk[:3, :3]).as_euler(
-            "XYZ", degrees=True
-        )
-        actual_pose_vector = np.concatenate([xyz, rpy])
-        return EndeffectorPose(
-            pose=actual_pose_vector, gripper_position=self.gripper_position
-        )
-
-
 class EndeffectorPose(ArmPosition):
-    robot_chain = None
-
     def __init__(self, pose, gripper_position=0) -> None:
         self.set(sequence=pose)
         self.__gripper_position = gripper_position
@@ -439,30 +414,6 @@ class EndeffectorPose(ArmPosition):
     def __str__(self) -> str:
         return f"XYZ: ({self.x},{self.y},{self.z}); RPY: ({self.roll},{self.pitch},{self.yaw})"
 
-    @classmethod
-    def set_robot_chain_filename(cls, urdf_filename):
-        cls.urdf_filename = urdf_filename
-
-    @staticmethod
-    def get_ikpy_robot_chain():
-        assert EndeffectorPose.urdf_filename is not None
-        return ikpy.chain.Chain.from_urdf_file(
-            urdf_file=EndeffectorPose.urdf_filename,
-            active_links_mask=[False] + [True] * 6 + [False],  # todo 6
-        )
-
-    @classmethod
-    def load_ik_cache(cls, file_path):
-        try:
-            with open(file_path, "rb") as fin:
-                logging.info(f"loading ik_cache to {file_path}")
-                cls.ik_caches = np.load(fin, allow_pickle=True).item()
-                fin.close()
-                return True
-        except Exception as exp:
-            logging.warning(f"Failed to load ik_cache @{file_path}, due to {exp}")
-            return False
-
     @staticmethod
     def inverse_kinematics_pinocchio(
         robot: pinocchio.robot_wrapper.RobotWrapper,
@@ -513,6 +464,9 @@ class EndeffectorPose(ArmPosition):
         dMi = oMdes.actInv(robot.data.oMi[-1])  # find transformation between two frames
         err = pinocchio.log(dMi).vector
         err_norm = np.linalg.norm(err)
+
+        # todo: a known issue where xyz and rpy has different scale
+        # use different eps for xyz and rpy
         if err_norm > eps:
             logging.debug(f"Solver error norm: {err_norm}")
             return None
@@ -532,146 +486,6 @@ class EndeffectorPose(ArmPosition):
             actuator_positions=joint_positions, expected_pose=expected_pose
         )
 
-    @staticmethod
-    def inverse_kinematics_ikpy(
-        robot_chain: ikpy.chain.Chain,
-        target_pose,
-        solver_mode: SolverMode,
-        initial_joint_positions=None,  # excludes gripper position
-        skip_validation=False,
-    ) -> ActuatorPositions:
-        xyz = target_pose.xyz
-        rpy = target_pose.rpy
-        if initial_joint_positions is None:
-            initial_position = None  # unknown initial_position
-        else:
-            initial_position = np.radians(
-                np.concatenate([[0], initial_joint_positions, [0]])
-            )
-        target_orientation = Rotation.from_euler("XYZ", rpy, degrees=True).as_matrix()
-
-        # if align all, or only z or only pos
-        if solver_mode == SolverMode.FORWARD:
-            orientation_mode = "Z"
-            target_orientation = [0, 1, 0]
-        elif solver_mode == SolverMode.ALL:
-            orientation_mode = "all"  # convention keyword of ikpy
-            # target_orientation = target_orientation
-        elif solver_mode == SolverMode.Z:
-            # to align with unit vector of z axis -- because gripper was pointing upwards at installation
-            orientation_mode = "Z"
-            target_orientation = target_orientation[:, 2]
-        elif solver_mode == SolverMode.NONE:
-            orientation_mode = None
-            target_orientation = None
-        else:
-            raise Exception(f"Unexpected solver_mode == {solver_mode}")
-
-        try:
-            joint_positions = robot_chain.inverse_kinematics(
-                target_position=xyz,
-                initial_position=initial_position,
-                target_orientation=target_orientation,
-                orientation_mode=orientation_mode,
-            )
-        except Exception as e:
-            logging.warning(
-                f"Skipped IK for {orientation_mode}, exception: {e}. orientation_mode == {orientation_mode} initial_position == {initial_position}"
-            )
-            return None
-
-        joint_positions = (
-            joint_positions[1:7] * 180.0 / np.pi
-        )  # [1:7] to remove base_link and gripper link
-
-        if not skip_validation:
-            joint_positions, expected_pose = EndeffectorPose.validate_ik_fk(
-                robot_chain=robot_chain,
-                intended_pose_vector=target_pose.pose,
-                new_joint_positions_sent_to_hardware=joint_positions,
-            )
-        if joint_positions is None:
-            return None
-        else:
-            return ActuatorPositions(
-                joint_positions=joint_positions,
-                gripper_position=target_pose.gripper_position,
-                expected_pose=expected_pose,
-            )
-
-    @staticmethod
-    def validate_ik_fk(
-        robot_chain,
-        intended_pose_vector,
-        new_joint_positions_sent_to_hardware: collections.abc.Sequence,
-        use_ikpy=True,
-    ):
-        if use_ikpy:
-            estimated_ee_pose_vector = (
-                ActuatorPositions(joint_positions=new_joint_positions_sent_to_hardware)
-                .forward_kinematics_ikpy(robot_chain=robot_chain)
-                .pose
-            )
-        else:
-            estimated_ee_pose = ActuatorPositions(
-                joint_positions=new_joint_positions_sent_to_hardware
-            ).forward_kinematics_math_based()
-            estimated_ee_pose_vector = estimated_ee_pose["endeffector_pose_intrinsic"]
-
-        if EndeffectorPose.pose_all_close(
-            intended_pose_vector, estimated_ee_pose_vector
-        ):
-            validated_positions = new_joint_positions_sent_to_hardware
-        else:
-            validated_positions = None
-        return validated_positions, estimated_ee_pose_vector
-
-    @staticmethod
-    def pose_all_close(
-        pose_a,
-        pose_b,
-        tolerance={
-            "xyz_atol": 7,  # mm
-            "rpy_atol": 7,  # degrees
-        },
-    ):
-        if pose_a is None and pose_b is None:
-            return True
-        if pose_a is None or pose_b is None:
-            return False
-        xyz_validated = np.allclose(
-            a=pose_a[:3],
-            b=pose_b[:3],
-            atol=tolerance["xyz_atol"],
-        )
-        rpy_validated = np.allclose(
-            a=pose_a[3:6],
-            b=pose_b[3:6],
-            atol=tolerance["rpy_atol"],
-        )
-        return xyz_validated and rpy_validated
-
-    @staticmethod
-    # Credits to ChatGPT. When asked:
-    # "use scipy, write code to transform a positional and orientational pose vector of shape (6,), which contains [x,y,z,roll,pitch,yaw], named input_pose, where roll pitch yaw are already in degrees, convert it into an affine matrix of (4,4) named affine_matrix"
-    # Aside from mistaken intrinsic to 'xyz', instead of 'XYZ', its response was copy pasted as-is:
-    def pose_to_affine(input_pose):
-        # Extract the translation and rotation values from the pose vector
-        tx, ty, tz, roll, pitch, yaw = input_pose
-
-        # Compute the rotation matrix using the given Euler angles in degrees
-        r = Rotation.from_euler(
-            "XYZ", [np.radians(roll), np.radians(pitch), np.radians(yaw)], degrees=False
-        )
-        R = r.as_matrix()
-
-        # Construct the affine matrix using the translation and rotation values
-        affine_matrix = np.eye(4)
-        affine_matrix[:3, :3] = R
-        affine_matrix[:3, 3] = [tx, ty, tz]
-
-        return affine_matrix
-
     def inverse_kinematics_ml_based(self, initial_joint_positions, current_pose):
         initial_joint_positions = np.array(initial_joint_positions, dtype=np.float32)
         initial_joint_positions_features = ActuatorPositions.normalize_to_relu6(
@@ -689,54 +503,6 @@ class EndeffectorPose(ArmPosition):
             sequence=inferenced_actuator_positions
         )
         return np.append(inferenced_actuator_positions, self.gripper_position)
-
-    def inverse_kinematics_cached(
-        self, orientation=SolverMode.FORWARD
-    ) -> ActuatorPositions:
-        if orientation == SolverMode.FORWARD:
-            orientation = (-90, 0, 0)
-            evaluation_unit = self.ik_caches["evaluation_unit"]
-            initial_xyz = self.ik_caches[orientation]["initial_xyz"]
-            initial_positions = self.ik_caches[orientation]["initial_positions"]
-            ik_cache = self.ik_caches[orientation]["ik_cache"]
-        else:
-            raise Exception(f"Not supported yet {orientation}")
-
-        xyz_relative = self.xyz - np.array(
-            initial_xyz
-        )  # recenter origin to initial_xyz
-        rounding_delta = (
-            xyz_relative - np.floor(xyz_relative / evaluation_unit) * evaluation_unit
-        )
-        rounded_down_xyz = self.xyz - rounding_delta
-        total_weight = 0
-        total_weighted_positions = np.zeros(len(initial_positions))
-        for offset in (  # loop over corners of the cube around xyz
-            (0, 0, 0),  # left back bottom
-            (1, 0, 0),  # right back bottom
-            (0, 1, 0),  # left front bottom
-            (1, 1, 0),  # right front bottom
-            (0, 0, 1),  # left back top
-            (1, 0, 1),  # right back top
-            (0, 1, 1),  # left front top
-            (1, 1, 1),  # right front top
-        ):
-            xyz_key = EndeffectorPose.to_fix_point(
-                rounded_down_xyz + np.array(offset) * evaluation_unit
-            )
-            if ik_cache.get(xyz_key, None) is None:
-                continue
-            distance = np.sum(np.square(self.xyz - np.array(xyz_key))) ** 0.5
-            total_weighted_positions += ik_cache[xyz_key] * distance
-            total_weight += distance
-
-        if total_weight == 0:
-            return None
-        else:
-            target_positions = total_weighted_positions / total_weight
-            return ActuatorPositions(
-                joint_positions=target_positions, gripper_position=self.gripper_position
-            )
 
     @staticmethod
     def to_fix_point(float_vector):

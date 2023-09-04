@@ -241,7 +241,7 @@ class TrajectoryEndeffectorPose(ArmTrajectory):
         for index in range(1, len(self.trajectory)):
             timestamp, new_pose = self.trajectory[index]
             new_pose: EndeffectorPose
-            new_positions, _ = new_pose.inverse_kinematics_ikpy(
+            new_positions, _ = new_pose.inverse_kinematics_pinocchio(
                 initial_joint_positions=current_positions[:-1],
             )
             if new_positions is None:

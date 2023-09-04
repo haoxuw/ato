@@ -48,9 +48,6 @@ class ArmController:
         ),  # angular velocity
         cartesian_velocities_mm__per_ms=tuple(i * 0.01 for i in range(1, 10)),
         initial_velocity_level=3,
-        use_cached_ik=False,
-        use_pinocchio_ik=True,
-        ik_cache_filepath_prefix="~/.ato/ik_cache",
         home_folder_path="~/.ato/",
     ):
         self._input_states = None
@@ -66,15 +63,6 @@ class ArmController:
         self._indexed_servo_configs: Tuple[ServoConnectionConfig]
         self._indexed_segment_lengths: Tuple[float]
         self._gripper_length: float
-        self._use_cached_ik = use_cached_ik
-        self._use_pinocchio_ik = use_pinocchio_ik
-        self._ik_cache_filepath_prefix = ik_cache_filepath_prefix
-        if self._use_cached_ik:
-            self.ik_cache_available = arm_position.EndeffectorPose.load_ik_cache(
-                file_path=self._get_ik_cache_file_path(
-                    ik_cache_filepath_prefix=self._ik_cache_filepath_prefix
-                )
-            )
 
         (
             self._indexed_servo_names,
@@ -121,9 +109,6 @@ class ArmController:
             "urdf",
             arm_segments_config[ArmConnectionAttributes.URDF_FILENAME],
         )
-        arm_position.EndeffectorPose.set_robot_chain_filename(
-            urdf_filename=urdf_filename
-        )
 
         try:
             self.robot: pinocchio.robot_wrapper.RobotWrapper = (
@@ -135,8 +120,6 @@ class ArmController:
             )
             logging.warning(f"Inverse kinematics will not be available.")
             self.robot = None
-
-        self.__robot_chain = None
 
         self.frame_rate = frame_rate
         self.interval_ms = 1000 // frame_rate
@@ -259,12 +242,6 @@ class ArmController:
     @property
     def controller_mode(self):
         return self.__controller_states[ControllerStates.CURRENT_MODE]
-
-    @property
-    def robot_chain(self):
-        if self.__robot_chain is None:
-            self.__robot_chain = arm_position.EndeffectorPose.get_ikpy_robot_chain()
-        return self.__robot_chain
 
     def is_thread_running(self):
         if self.__controller_thread is None:
@@ -408,53 +385,35 @@ class ArmController:
         self,
         target_pose: arm_position.EndeffectorPose,
         time_delta_ms: float,
-        skip_validation=False,
         use_initial_joint_positions=True,
         restrict_max_speed=True,
     ):
 
-        start_time = datetime.now()
         actuator_positions = self.__get_indexed_actuator_positions()
         if use_initial_joint_positions:
             initial_joint_positions = actuator_positions[:-1]  # remove gripper
         else:
             initial_joint_positions = None
 
-        target_positions = None
-        expected_pose = None
-        positions_delta = None
+        ik_solved_positions = (
+            arm_position.EndeffectorPose.inverse_kinematics_pinocchio(
+                robot=self.robot,
+                target_pose=target_pose,
+                time_delta_ms=time_delta_ms,
+                initial_joint_positions=initial_joint_positions,
+            )
+        )
 
-        for solver_mode in self.__solver_priorities:
-            if (
-                self._use_cached_ik
-                and self.ik_cache_available
-                and self.__solver_priorities == (SolverMode.FORWARD,)
-                and self.num_segments == 3
-            ):  # todo: ik_cache only support forward mode 3 segments arm for now
-                target_positions = target_pose.inverse_kinematics_cached()
-            elif self._use_pinocchio_ik:
-                target_positions = (
-                    arm_position.EndeffectorPose.inverse_kinematics_pinocchio(
-                        robot=self.robot,
-                        target_pose=target_pose,
-                        time_delta_ms=time_delta_ms,
-                        initial_joint_positions=initial_joint_positions,
-                    )
-                )
-            else:
-                # deprecated
-                target_positions = arm_position.EndeffectorPose.inverse_kinematics_ikpy(
-                    robot_chain=self.robot_chain,
-                    target_pose=target_pose,
-                    initial_joint_positions=initial_joint_positions,
-                    solver_mode=solver_mode,
-                    skip_validation=skip_validation,
-                )
-            if target_positions is not None:
-                expected_pose = target_positions.expected_pose
-                positions_delta = target_positions.actuator_positions - np.array(
-                    self.__get_indexed_actuator_positions()
-                )
+        if ik_solved_positions is None:
+            logging.info(f"Failed to solve @{target_pose}")
+            return None, None
+        else:
+            start_time = datetime.now()
+            current_actuator_positions = np.array(self.__get_indexed_actuator_positions())
+            positions_delta = ik_solved_positions.actuator_positions - current_actuator_positions
+            resulted_pose = ik_solved_positions.expected_pose
+
+            if restrict_max_speed:
                 joint_velocity_limits = (
                     np.array(
                         [
@@ -470,28 +429,30 @@ class ArmController:
                     np.abs(positions_delta / joint_velocity_limits)
                 )
 
-                if restrict_max_speed:
-                    if positions_normalization_ratio > 1:
-                        positions_delta /= positions_normalization_ratio
-                        logging.info(
-                            f"applied positions_normalization_ratio: {positions_normalization_ratio}"
-                        )
-                break
-            else:
-                logging.debug(f"Failed to solve @{solver_mode}")
+                if positions_normalization_ratio > 1:
+                    positions_delta /= positions_normalization_ratio
+                    logging.info(
+                        f"applied positions_normalization_ratio: {positions_normalization_ratio}"
+                    )
 
-        # update perf stats
-        ik_solving_time = (datetime.now() - start_time).total_seconds() * 1000.0
-        if self.solver_perf_stats["avg_time_ms"] is None:
-            self.solver_perf_stats["avg_time_ms"] = ik_solving_time
-        else:
-            self.solver_perf_stats["avg_time_ms"] = (
-                self.solver_perf_stats["avg_time_ms"] * self.solver_perf_stats["count"]
-                + ik_solving_time
-            ) / (self.solver_perf_stats["count"] + 1)
-        self.solver_perf_stats["count"] += 1
-        logging.debug(self.solver_perf_stats)
-        return positions_delta, expected_pose
+                # todo switch to pinocchio
+                resulted_pose = arm_position.ActuatorPositions(
+                    actuator_positions=current_actuator_positions + positions_delta
+                ).forward_kinematics_math_based()["endeffector_pose_intrinsic"]
+
+            # update perf stats
+            ik_solving_time = (datetime.now() - start_time).total_seconds() * 1000.0
+            if self.solver_perf_stats["avg_time_ms"] is None:
+                self.solver_perf_stats["avg_time_ms"] = ik_solving_time
+            else:
+                self.solver_perf_stats["avg_time_ms"] = (
+                    self.solver_perf_stats["avg_time_ms"] * self.solver_perf_stats["count"]
+                    + ik_solving_time
+                ) / (self.solver_perf_stats["count"] + 1)
+            self.solver_perf_stats["count"] += 1
+            logging.debug(self.solver_perf_stats)
+
+            return positions_delta, resulted_pose
 
     def move_to_installation_position(self):
         for servo in self._indexed_servo_objs:
@@ -779,7 +740,7 @@ class ArmController:
             else:
                 (
                     positions_delta,
-                    expected_pose,
+                    resulted_pose,
                 ) = self.__solve_valid_movements_from_target_pose(
                     target_pose=intended_pose, time_delta_ms=time_delta_ms
                 )
@@ -789,9 +750,9 @@ class ArmController:
                     #   Movement: yes
                     #   Reset intended: yes
                     self.__moving_towards_positions_delta = positions_delta
-                    assert expected_pose is not None
+                    assert resulted_pose is not None
                     self._intended_pose = arm_position.EndeffectorPose(
-                        pose=expected_pose
+                        pose=resulted_pose
                     )
 
                     self._move_servos_by_joint_space_delta(
@@ -1099,10 +1060,6 @@ class ArmController:
         #     self.__get_current_actuator_position_obj().forward_kinematics_ml_based()
         # )
         return f"{time_str} @activated_segment_ids={self.activated_segment_ids} $velocity deg/ms={self.actuator_velocity} {self.frame_rate}hz\n{actuator_states}\nMath-based EE estimate={math_based_current_pose}\n"
-
-    def _get_ik_cache_file_path(self, ik_cache_filepath_prefix):
-        arm_config_name = "ato_3_seg_270_deg"
-        return os.path.expanduser(f"{ik_cache_filepath_prefix}_{arm_config_name}.npy")
 
     # the Sequence_Index would match self._indexed_ variables
     def __get_indexed_actuator_positions(self):

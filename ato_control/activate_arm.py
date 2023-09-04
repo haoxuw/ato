@@ -66,12 +66,6 @@ def get_args():
         default="~/.ato/training_data",
         help="Add a suffix to the filename of generated training data.",
     )
-    parser.add_argument(
-        "--ik_cache_filepath_prefix",
-        type=str,
-        default="~/.ato/ik_cache",
-        help="Add a suffix to the filename of generated ik cache.",
-    )
     arm_configs = ["arm_4_axis", "arm_6_axis"]
     parser.add_argument(
         "--arm_segments_config",
