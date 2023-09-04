@@ -68,9 +68,6 @@ class RaspberryPi(control_board_interface.ControlBoardInterface):
         gpio_id = self.__to_gpio_id(header_id)
         self.__set_pulsewidth(user_gpio=gpio_id, pulsewidth=pulsewidth)
 
-    def reset_pos(self):
-        pass  # todo use this to gradually reset post to 90deg at start, and have a reset button on joystick
-
     def turn_off(self, header_id, show_info=False):
         gpio_id = self.__to_gpio_id(header_id)
         self.__config_pwm(gpio_id=gpio_id, frequency=0, dutycycle=0)

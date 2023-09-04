@@ -9,13 +9,10 @@
 # See more details in the LICENSE folder.
 
 import logging
+import time
 
 import numpy as np
-from control import (
-    arm_controller_joystick,
-    ps4_joystick,
-    raspberry_pi,
-)
+from control import arm_controller_joystick, ps4_joystick, raspberry_pi
 from control.config_and_enums.predefined_arms import arm_6_axis
 
 
@@ -34,7 +31,7 @@ def test_component_obj_creation():
 
 def test_move_L3():
     pi = raspberry_pi.RaspberryPi()
-    joystick = ps4_joystick.Ps4Joystick(interface=f"/dev/input/js0")
+    joystick = ps4_joystick.Ps4Joystick(interface=f"/dev/input/js4")
 
     arm_ctl = arm_controller_joystick.ArmControllerJoystick(
         frame_rate=20,
@@ -44,25 +41,30 @@ def test_move_L3():
         auto_save_controller_states_to_file=False,
     )
 
-    arm_ctl.start_threads(start_joystick_thread=False)
-
+    arm_ctl.start_threads(start_joystick_thread=True)
     # simulate joystick inputs
     seed = np.random.randint(0, 1000)
     logging.info(f"Using seed {seed}")
     np.random.seed(seed)
-    for _ in range(1000):
-        arm_ctl.joystick_obj.on_L3_right(
-            value=np.random.random() * joystick.axis_max_value
-        )
-        arm_ctl.joystick_obj.on_L3_x_at_rest()
-        arm_ctl.joystick_obj.on_L3_left(
-            value=np.random.random() * joystick.axis_max_value
-        )
-        arm_ctl.joystick_obj.on_L3_up(
-            value=np.random.random() * joystick.axis_max_value
-        )
-        arm_ctl.joystick_obj.on_L3_down(
-            value=np.random.random() * joystick.axis_max_value
-        )
+    for index in range(50):
+        random_float = np.random.random()
+        if index % 5 == 0:
+            arm_ctl.joystick_obj.on_L3_right(
+                value=random_float * joystick.axis_max_value
+            )
+        elif index % 5 == 1:
+            arm_ctl.joystick_obj.on_L3_x_at_rest()
+        elif index % 5 == 2:
+            arm_ctl.joystick_obj.on_L3_left(
+                value=random_float * joystick.axis_max_value
+            )
+        elif index % 5 == 3:
+            arm_ctl.joystick_obj.on_L3_up(value=random_float * joystick.axis_max_value)
+        elif index % 5 == 4:
+            arm_ctl.joystick_obj.on_L3_down(
+                value=random_float * joystick.axis_max_value
+            )
+        time.sleep(0.2)  # 0.1s
+    # 10 seconds
     arm_ctl.stop_threads()
     return

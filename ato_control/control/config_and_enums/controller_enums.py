@@ -13,7 +13,7 @@ from dataclasses import dataclass
 
 @dataclass
 class ControllerStates:
-    LOG_INFO_EACH_TENTHS_SECOND = "__DEBUG_STATE__LOG_INFO_EACH_TENTHS_SECOND"
+    LOG_INFO_EACH_TENTH_SECOND = "__DEBUG_STATE__LOG_INFO_EACH_TENTH_SECOND"
 
     CURRENT_MODE = "CURRENT_MODE"  # value has to be one of those:
 
@@ -28,10 +28,9 @@ class ControllerStates:
     RECORDING_ON = "RECORDING_ON"
 
 
+# todo: implement usage
 @dataclass
 class SolverMode:
-    FORWARD = "Forward"
-    ALL = "All"
-    Y = "Y"
-    Z = "Z"
-    NONE = "None"
+    XYZ = "XYZ"
+    RPY = "RPY"
+    BALANCED = "BALANCED"

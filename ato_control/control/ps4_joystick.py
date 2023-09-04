@@ -377,8 +377,6 @@ class Ps4Joystick(Controller, InputDeviceInterface):
     def on_R3_release(self):
         """R3 joystick is released after the click. This event is only detected when connecting without ds4drv"""
         self.__joystick_internal_states[Button.R3] = False
-        if self.in_cartesian_mode:
-            self._arm_controller_obj.switch_forward_orientation_mode()
         self._arm_controller_obj.replay_trajectory()
         logging.debug("on_R3_release")
 
@@ -398,8 +396,7 @@ class Ps4Joystick(Controller, InputDeviceInterface):
 
     def on_share_release(self):
         """this event is only detected when connecting without ds4drv"""
-        if self.in_setting_mode:
-            self.controller_states[ControllerStates.LOG_INFO_EACH_TENTHS_SECOND] ^= True
+        self.controller_states[ControllerStates.LOG_INFO_EACH_TENTH_SECOND] ^= True
         logging.debug("on_share_release")
 
     def on_playstation_button_press(self):

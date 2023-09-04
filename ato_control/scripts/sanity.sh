@@ -12,10 +12,9 @@
 SCRIPT_FILE_PATH=$(readlink -f ${BASH_SOURCE[0]})
 SCRIPT_FOLDER_PATH=$(dirname ${SCRIPT_FILE_PATH})
 
-MAX_WAIT_TIME=5 # run for 5s
 cd "${SCRIPT_FOLDER_PATH}/../"
 
-{ python -m pytest tests/ ; } || { echo 'Mesh module failed to generate shelf.stl.'; exit -2; }
+{ python -m pytest tests/ ; } || { echo 'ato_control pytest failed'; exit -2; }
 
 echo
 echo "Sanity passed"

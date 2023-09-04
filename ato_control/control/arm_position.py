@@ -14,10 +14,10 @@ import numbers
 import pathlib
 import sys
 from abc import ABC, abstractmethod
+from datetime import datetime
 
 import numpy as np
 import pinocchio
-from control.config_and_enums.controller_enums import SolverMode
 from scipy.spatial.transform import Rotation
 
 try:
@@ -232,14 +232,54 @@ class ActuatorPositions(ArmPosition):
             features=features
         )
 
-    def forward_kinematics_math_based(self):
-        assert (
-            self.__class__.actuator_indices_mapping is not None
-        ), self.__class__.actuator_indices_mapping
-        assert (
-            self.__class__.arm_segment_lengths is not None
-        ), self.__class__.arm_segment_lengths
-        joint_positions = np.array(self.__joint_positions)
+    @staticmethod
+    def forward_kinematics_pinocchio_based(
+        robot, joint_positions, return_se3_object=False, log_debug=False
+    ):
+        current_time = datetime.now()
+        # [0] as the dummy_object_link, because:
+        # in the urdf, each link is represented by its anchoring position
+        # therefore the endeffector's coordinate is located on the last joint
+        # to model the position that holds the object, we added a dummy_object_link
+        joint_configuration = np.radians(np.array(list(joint_positions) + [0]))
+        joint_configuration = np.matrix(joint_configuration).T
+        pinocchio.forwardKinematics(
+            robot.model, robot.data, joint_configuration
+        )  # updated in robot.data.oMi internally
+        if log_debug:
+            # print out the placement of each joint of the kinematic tree
+            for name, oMi in zip(robot.model.names, robot.data.oMi):
+                string = "{:<24} : {: .2f} {: .2f} {: .2f}".format(
+                    name, *oMi.translation.T.flat
+                )
+                logging.debug(string)
+        # pinocchio's naming convention:
+        # oMi is origin to M (i.e. end effector) transformation, (i)nferred from joint_configuration
+        # oMdes is origin to M (i.e. end effector) transformation, (des)ired
+
+        oMdes = robot.data.oMi[-1]
+        if return_se3_object:
+            # return a pinocchio.SE3 object
+            solved_pose = oMdes.copy()
+        else:
+            xyz = oMdes.translation
+            rotation_current = Rotation.from_matrix(oMdes.rotation)
+            rpy = rotation_current.as_euler("XYZ", degrees=True)
+            solved_pose = np.concatenate([xyz, rpy])
+        logging.debug(
+            f"forward_kinematics_pinocchio_based elapsed time: {(datetime.now() - current_time).total_seconds() * 1000.0}ms"
+        )
+        return solved_pose
+
+    # consider: refactor to static method
+    # support multiple arm configurations, by
+    # creating a arm_configuration object: {actuator_indices_mapping, gripper_index_mapping, arm_segment_lengths}
+    @classmethod
+    def forward_kinematics_math_based(cls, joint_positions):
+        current_time = datetime.now()
+        assert cls.actuator_indices_mapping is not None, cls.actuator_indices_mapping
+        assert cls.arm_segment_lengths is not None, cls.arm_segment_lengths
+        joint_positions = np.array(joint_positions)
         rotation_sequence = np.array(
             [
                 (
@@ -247,13 +287,13 @@ class ActuatorPositions(ArmPosition):
                     0,
                     joint_positions[segment_index[0]],
                 )
-                for segment_index in self.__class__.actuator_indices_mapping
+                for segment_index in cls.actuator_indices_mapping
             ]
         )
 
         assert (
-            rotation_sequence.shape[0] == self.__class__.arm_segment_lengths.shape[0]
-        ), f"{rotation_sequence.shape[0]} == {self.__class__.arm_segment_lengths.shape[0]}"
+            rotation_sequence.shape[0] == cls.arm_segment_lengths.shape[0]
+        ), f"{rotation_sequence.shape[0]} == {cls.arm_segment_lengths.shape[0]}"
 
         # not supporting yaw
         def rotate(body_frame_ref_rpy, rotation_rpy):
@@ -287,7 +327,7 @@ class ActuatorPositions(ArmPosition):
         # then we rotate arm_segment vector to body_frame_ref by: arm_segment @ body_frame_ref
         # finally we add this projected vector to current_frame_ref_origin, and move on to the next segment
         for rotation, arm_segment_length in zip(
-            rotation_sequence, self.__class__.arm_segment_lengths
+            rotation_sequence, cls.arm_segment_lengths
         ):
             arm_segment = np.array([0, 0, arm_segment_length])
             # it's important and counterintuitive body_frame_ref is on the right side,
@@ -307,7 +347,7 @@ class ActuatorPositions(ArmPosition):
 
         endeffector_xyz = (
             np.copy(current_frame_ref_origin)
-            + np.array([0, 0, self.__class__.gripper_length]) @ body_frame_ref
+            + np.array([0, 0, cls.gripper_length]) @ body_frame_ref
         )
         endeffector_reference_frame = body_frame_ref
         endeffector_rpy = Rotation.align_vectors(a=body_frame_ref, b=global_frame)[
@@ -315,6 +355,9 @@ class ActuatorPositions(ArmPosition):
         ]  # body_frame_ref is body observed in the initial global frame
         endeffector_rpy_intrinsic = endeffector_rpy.as_euler("XYZ", degrees=True)
         endeffector_rpy_extrinsic = endeffector_rpy.as_euler("xyz", degrees=True)
+        logging.debug(
+            f"forward_kinematics_math_based elapsed time: {(datetime.now() - current_time).total_seconds() * 1000.0}ms"
+        )
         return {
             "segments_xyz": np.array(segments_xyz),
             "frontend_pose_intrinsic": np.array(
@@ -329,6 +372,7 @@ class ActuatorPositions(ArmPosition):
             ),
             "endeffector_reference_frame": np.array(endeffector_reference_frame),
         }
+
 
 class EndeffectorPose(ArmPosition):
     def __init__(self, pose, gripper_position=0) -> None:
@@ -415,44 +459,25 @@ class EndeffectorPose(ArmPosition):
         return f"XYZ: ({self.x},{self.y},{self.z}); RPY: ({self.roll},{self.pitch},{self.yaw})"
 
     @staticmethod
-    def inverse_kinematics_pinocchio(
+    def inverse_kinematics_pinocchio_based(
         robot: pinocchio.robot_wrapper.RobotWrapper,
         target_pose,
         time_delta_ms: int,
         initial_joint_positions=None,  # excludes gripper position
-        log_debug=False,
+        gripper_position=None,
         # todo: what's the best value for the following parameters?
         damp=1e-12,
         eps=5,
         speed_factor=50,
     ) -> ActuatorPositions:
-        expected_pose = np.concatenate([target_pose.xyz, target_pose.rpy])
+        oMdes = ActuatorPositions.forward_kinematics_pinocchio_based(
+            robot=robot,
+            joint_positions=initial_joint_positions,
+            return_se3_object=True,
+        )
 
-        # [0] as the dummy_object_link, because:
-        # in the urdf, each link is represented by its anchoring position
-        # therefore the endeffector's coordinate is located on the last joint
-        # to model the position that holds the object, we added a dummy_object_link
-        joint_id = len(initial_joint_positions) + 1  # id of the dummy_object_link
+        current_time = datetime.now()
 
-        joint_configuration = np.radians(np.array(list(initial_joint_positions) + [0]))
-        joint_configuration = np.matrix(joint_configuration).T
-        pinocchio.forwardKinematics(
-            robot.model, robot.data, joint_configuration
-        )  # updated in robot.data.oMi internally
-
-        if log_debug:
-            # print out the placement of each joint of the kinematic tree
-            for name, oMi in zip(robot.model.names, robot.data.oMi):
-                string = "{:<24} : {: .2f} {: .2f} {: .2f}".format(
-                    name, *oMi.translation.T.flat
-                )
-                logging.debug(string)
-        initial_pose = robot.data.oMi[-1]
-
-        # pinocchio's naming convention:
-        # oMi is origin to M (i.e. end effector) transformation, (i)nferred from joint_configuration
-        # oMdes is origin to M (i.e. end effector) transformation, (des)ired
-        oMdes = initial_pose.copy()
         oMdes.translation = target_pose.xyz
 
         rotation_delta = Rotation.from_euler("XYZ", target_pose.rpy, degrees=True)
@@ -469,22 +494,40 @@ class EndeffectorPose(ArmPosition):
         # use different eps for xyz and rpy
         if err_norm > eps:
             logging.debug(f"Solver error norm: {err_norm}")
-            return None
+            ik_solved_positions = None
+        else:
+            joint_id = len(initial_joint_positions) + 1  # id of the dummy_object_link
+            joint_configuration = np.radians(
+                np.array(list(initial_joint_positions) + [0])
+            )
 
-        jointJacobian = pinocchio.computeJointJacobian(
-            robot.model, robot.data, joint_configuration, joint_id
-        )  # calculate jacobian
-        velocity = -jointJacobian.T.dot(
-            np.linalg.solve(jointJacobian.dot(jointJacobian.T) + damp * np.eye(6), err)
-        )  # calculate velocity in configuration space
+            jointJacobian = pinocchio.computeJointJacobian(
+                robot.model, robot.data, joint_configuration, joint_id
+            )  # calculate jacobian
+            velocity = -jointJacobian.T.dot(
+                np.linalg.solve(
+                    jointJacobian.dot(jointJacobian.T) + damp * np.eye(6), err
+                )
+            )  # calculate velocity in configuration space
 
-        joint_positions = pinocchio.integrate(
-            robot.model, joint_configuration, velocity * time_delta_ms / speed_factor
+            joint_positions = pinocchio.integrate(
+                robot.model,
+                joint_configuration,
+                velocity * time_delta_ms / speed_factor,
+            )
+            joint_positions = np.degrees(joint_positions)[
+                :-1
+            ]  # remove the dummy_object_link
+            ik_solved_positions = ActuatorPositions(
+                joint_positions=joint_positions,
+                gripper_position=gripper_position,
+                expected_pose=target_pose,
+            )
+
+        logging.debug(
+            f"inverse_kinematics_pinocchio_based elapsed time: {(datetime.now() - current_time).total_seconds() * 1000.0}ms"
         )
-        joint_positions = np.degrees(joint_positions)
-        return ActuatorPositions(
-            actuator_positions=joint_positions, expected_pose=expected_pose
-        )
+        return ik_solved_positions
 
     def inverse_kinematics_ml_based(self, initial_joint_positions, current_pose):
         initial_joint_positions = np.array(initial_joint_positions, dtype=np.float32)
