@@ -13,10 +13,9 @@ SCRIPT_FILE_PATH=$(readlink -f ${BASH_SOURCE[0]})
 SCRIPT_FOLDER_PATH=$(dirname ${SCRIPT_FILE_PATH})
 
 pushd "${SCRIPT_FOLDER_PATH}/../" > /dev/null
-echo "Creating virtual environment, the initial run might take a while..."
-source ./scripts/setup_venv.sh > /dev/null
-echo "Virtual environment created successfuly"
+source ./scripts/setup_venv.sh
 
+sh ./scripts/download_urdf_mesh_stl.sh
 if cat /proc/cpuinfo | grep Raspberry > /dev/null
   then 
   sudo pigpiod

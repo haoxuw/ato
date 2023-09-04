@@ -21,9 +21,10 @@ pushd "${SCRIPT_FOLDER_PATH}/../" > /dev/null
 [ ! -d "${VENV_FOLDER_NAME}" ] && echo "Creating python virtual environment under ${VENV_FOLDER_NAME}" && python -m venv ${VENV_FOLDER_NAME}
 
 source ${VENV_FOLDER_NAME}/bin/activate
+echo "Creating virtual environment, the initial run might take a while..."
 pip install --upgrade pip
 pip install --pre cadquery
-pip install black==22.10.0
+pip install -r ../requirements.dev.txt
 popd > /dev/null
 
 echo

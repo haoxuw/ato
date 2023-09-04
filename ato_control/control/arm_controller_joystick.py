@@ -18,6 +18,7 @@ from control.config_and_enums.joystick_input_types import Button, JoystickAxis
 class ArmControllerJoystick(arm_controller.ArmController):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
+        self.reset_input_states()
 
     def reset_input_states(self):
         super().reset_input_states()
@@ -103,7 +104,7 @@ class ArmControllerJoystick(arm_controller.ArmController):
                 }
             return mapping[enabler_axis]
 
-    def _parse_movement_updates_in_joint_space(self, time_delta_ms, show_info):
+    def _parse_movement_updates_in_joint_space(self, time_delta_ms, show_info=None):
         joint_positions_delta = [0] * len(self._indexed_servo_names)
         # each joint is controlled by some designated_axis on the joystick
         for index, unique_name in enumerate(self._indexed_servo_names):

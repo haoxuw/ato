@@ -19,10 +19,9 @@ class ArmControllerMlTraining(arm_controller.ArmController):
     def __get_endeffector_pose_intrinsic(actuator_positions, index=None, size=None):
         if index is not None and size is not None and (index - 1) % 10000 == 0:
             logging.info(f"Processed {index//1000}k ({int(100.0 * index / size)}%)")
-        return arm_position.ActuatorPositions(
+        return arm_position.ActuatorPositions.forward_kinematics_math_based(
             joint_positions=actuator_positions[:-1],
-            gripper_position=actuator_positions[-1],
-        ).forward_kinematics_math_based()["endeffector_pose_intrinsic"]
+        )["endeffector_pose_intrinsic"]
 
     def __generate_training_data_forward_kinematics(
         self,

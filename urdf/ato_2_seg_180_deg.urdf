@@ -59,30 +59,32 @@
     </visual>
   </link>
 
-  <joint name="joint_2_to_bone_2" type="revolute">
+  <joint name="joint_2_to_endeffector" type="revolute">
     <axis xyz="1 0 0"/>
     <limit lower="-1.48353" upper="1.48353" effort="1.0" velocity="1.0"/>
     <parent link="joint_2"/>
-    <child link="bone_2"/>
+    <child link="endeffector"/>
     <origin xyz="0 0 200" rpy="0 0 0"/>
   </joint>
 
-  <link name="bone_2">
+  <link name="endeffector">
     <visual>
       <origin rpy="0 0 0" xyz="0 0 0"/>
       <geometry>
-      <mesh filename="file:///tmp/pitch_range_180/BoneAugmented_urdf_mesh.stl"/>
+      <mesh filename="file:///tmp/pitch_range_180/GripperDragonWithServo_urdf_mesh.stl"/>
       </geometry>
     </visual>
   </link>
 
-  <joint name="bone_2_to_endeffector" type="fixed">
-    <parent link="bone_2"/>
-    <child link="endeffector_link"/>
+  <joint name="endeffector_to_dummy_object" type="revolute">
+    <axis xyz="1 0 0"/>
+    <limit lower="0" upper="0" effort="1.0" velocity="1.0"/>
+    <parent link="endeffector"/>
+    <child link="dummy_object_link"/>
     <origin xyz="0 0 147" rpy="0 0 0"/>
   </joint>
 
-  <link name="endeffector_link">
+  <link name="dummy_object_link">
     <visual>
       <origin rpy="0 0 0" xyz="0 0 0"/>
       <geometry>

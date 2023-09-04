@@ -14,10 +14,10 @@ import numbers
 import pathlib
 import sys
 from abc import ABC, abstractmethod
+from datetime import datetime
 
-import ikpy.chain
 import numpy as np
-from control.config_and_enums.controller_enums import SolverMode
+import pinocchio
 from scipy.spatial.transform import Rotation
 
 try:
@@ -225,9 +225,6 @@ class ActuatorPositions(ArmPosition):
             else ""
         )
 
-    # we have 3 versions of forward_kinematics, to practice and learn, we implemented one version based on ml
-    # and another base on math.
-    # finally a feature rich implementation from the ikpy package
     def forward_kinematics_ml_based(self):
         joint_positions = np.array(self.joint_positions, dtype=np.float32)
         features = ActuatorPositions.normalize_to_relu6(sequence=joint_positions)
@@ -235,14 +232,54 @@ class ActuatorPositions(ArmPosition):
             features=features
         )
 
-    def forward_kinematics_math_based(self):
-        assert (
-            self.__class__.actuator_indices_mapping is not None
-        ), self.__class__.actuator_indices_mapping
-        assert (
-            self.__class__.arm_segment_lengths is not None
-        ), self.__class__.arm_segment_lengths
-        joint_positions = np.array(self.__joint_positions)
+    @staticmethod
+    def forward_kinematics_pinocchio_based(
+        robot, joint_positions, return_se3_object=False, log_debug=False
+    ):
+        current_time = datetime.now()
+        # [0] as the dummy_object_link, because:
+        # in the urdf, each link is represented by its anchoring position
+        # therefore the endeffector's coordinate is located on the last joint
+        # to model the position that holds the object, we added a dummy_object_link
+        joint_configuration = np.radians(np.array(list(joint_positions) + [0]))
+        joint_configuration = np.matrix(joint_configuration).T
+        pinocchio.forwardKinematics(
+            robot.model, robot.data, joint_configuration
+        )  # updated in robot.data.oMi internally
+        if log_debug:
+            # print out the placement of each joint of the kinematic tree
+            for name, oMi in zip(robot.model.names, robot.data.oMi):
+                string = "{:<24} : {: .2f} {: .2f} {: .2f}".format(
+                    name, *oMi.translation.T.flat
+                )
+                logging.debug(string)
+        # pinocchio's naming convention:
+        # oMi is origin to M (i.e. end effector) transformation, (i)nferred from joint_configuration
+        # oMdes is origin to M (i.e. end effector) transformation, (des)ired
+
+        oMdes = robot.data.oMi[-1]
+        if return_se3_object:
+            # return a pinocchio.SE3 object
+            solved_pose = oMdes.copy()
+        else:
+            xyz = oMdes.translation
+            rotation_current = Rotation.from_matrix(oMdes.rotation)
+            rpy = rotation_current.as_euler("XYZ", degrees=True)
+            solved_pose = np.concatenate([xyz, rpy])
+        logging.debug(
+            f"forward_kinematics_pinocchio_based elapsed time: {(datetime.now() - current_time).total_seconds() * 1000.0}ms"
+        )
+        return solved_pose
+
+    # consider: refactor to static method
+    # support multiple arm configurations, by
+    # creating a arm_configuration object: {actuator_indices_mapping, gripper_index_mapping, arm_segment_lengths}
+    @classmethod
+    def forward_kinematics_math_based(cls, joint_positions):
+        current_time = datetime.now()
+        assert cls.actuator_indices_mapping is not None, cls.actuator_indices_mapping
+        assert cls.arm_segment_lengths is not None, cls.arm_segment_lengths
+        joint_positions = np.array(joint_positions)
         rotation_sequence = np.array(
             [
                 (
@@ -250,13 +287,13 @@ class ActuatorPositions(ArmPosition):
                     0,
                     joint_positions[segment_index[0]],
                 )
-                for segment_index in self.__class__.actuator_indices_mapping
+                for segment_index in cls.actuator_indices_mapping
             ]
         )
 
         assert (
-            rotation_sequence.shape[0] == self.__class__.arm_segment_lengths.shape[0]
-        ), f"{rotation_sequence.shape[0]} == {self.__class__.arm_segment_lengths.shape[0]}"
+            rotation_sequence.shape[0] == cls.arm_segment_lengths.shape[0]
+        ), f"{rotation_sequence.shape[0]} == {cls.arm_segment_lengths.shape[0]}"
 
         # not supporting yaw
         def rotate(body_frame_ref_rpy, rotation_rpy):
@@ -290,7 +327,7 @@ class ActuatorPositions(ArmPosition):
         # then we rotate arm_segment vector to body_frame_ref by: arm_segment @ body_frame_ref
         # finally we add this projected vector to current_frame_ref_origin, and move on to the next segment
         for rotation, arm_segment_length in zip(
-            rotation_sequence, self.__class__.arm_segment_lengths
+            rotation_sequence, cls.arm_segment_lengths
         ):
             arm_segment = np.array([0, 0, arm_segment_length])
             # it's important and counterintuitive body_frame_ref is on the right side,
@@ -310,7 +347,7 @@ class ActuatorPositions(ArmPosition):
 
         endeffector_xyz = (
             np.copy(current_frame_ref_origin)
-            + np.array([0, 0, self.__class__.gripper_length]) @ body_frame_ref
+            + np.array([0, 0, cls.gripper_length]) @ body_frame_ref
         )
         endeffector_reference_frame = body_frame_ref
         endeffector_rpy = Rotation.align_vectors(a=body_frame_ref, b=global_frame)[
@@ -318,6 +355,9 @@ class ActuatorPositions(ArmPosition):
         ]  # body_frame_ref is body observed in the initial global frame
         endeffector_rpy_intrinsic = endeffector_rpy.as_euler("XYZ", degrees=True)
         endeffector_rpy_extrinsic = endeffector_rpy.as_euler("xyz", degrees=True)
+        logging.debug(
+            f"forward_kinematics_math_based elapsed time: {(datetime.now() - current_time).total_seconds() * 1000.0}ms"
+        )
         return {
             "segments_xyz": np.array(segments_xyz),
             "frontend_pose_intrinsic": np.array(
@@ -333,28 +373,8 @@ class ActuatorPositions(ArmPosition):
             "endeffector_reference_frame": np.array(endeffector_reference_frame),
         }
 
-    # returns EndeffectorPose
-    def forward_kinematics_ikpy(self, robot_chain):
-        estimated_ee_pose_matrix_via_fk = robot_chain.forward_kinematics(
-            [
-                0,
-                *np.radians(self.__joint_positions),
-                0,
-            ]  # base_link + active_joints + dummy_gripper
-        )
-        xyz = estimated_ee_pose_matrix_via_fk[:3, 3]
-        rpy = Rotation.from_matrix(estimated_ee_pose_matrix_via_fk[:3, :3]).as_euler(
-            "XYZ", degrees=True
-        )
-        actual_pose_vector = np.concatenate([xyz, rpy])
-        return EndeffectorPose(
-            pose=actual_pose_vector, gripper_position=self.gripper_position
-        )
-
 
 class EndeffectorPose(ArmPosition):
-    robot_chain = None
-
     def __init__(self, pose, gripper_position=0) -> None:
         self.set(sequence=pose)
         self.__gripper_position = gripper_position
@@ -438,169 +458,76 @@ class EndeffectorPose(ArmPosition):
     def __str__(self) -> str:
         return f"XYZ: ({self.x},{self.y},{self.z}); RPY: ({self.roll},{self.pitch},{self.yaw})"
 
-    @classmethod
-    def set_robot_chain_filename(cls, urdf_filename):
-        cls.urdf_filename = urdf_filename
-
     @staticmethod
-    def get_ikpy_robot_chain():
-        assert EndeffectorPose.urdf_filename is not None
-        return ikpy.chain.Chain.from_urdf_file(
-            urdf_file=EndeffectorPose.urdf_filename,
-            active_links_mask=[False] + [True] * 6 + [False],  # todo 6
-        )
-
-    @classmethod
-    def load_ik_cache(cls, file_path):
-        try:
-            with open(file_path, "rb") as fin:
-                logging.info(f"loading ik_cache to {file_path}")
-                cls.ik_caches = np.load(fin, allow_pickle=True).item()
-                fin.close()
-                return True
-        except Exception as exp:
-            logging.warning(f"Failed to load ik_cache @{file_path}, due to {exp}")
-            return False
-
-    @staticmethod
-    def inverse_kinematics_ikpy(
-        robot_chain: ikpy.chain.Chain,
+    def inverse_kinematics_pinocchio_based(
+        robot: pinocchio.robot_wrapper.RobotWrapper,
         target_pose,
-        solver_mode: SolverMode,
+        time_delta_ms: int,
         initial_joint_positions=None,  # excludes gripper position
-        skip_validation=False,
+        gripper_position=None,
+        # todo: what's the best value for the following parameters?
+        damp=1e-12,
+        eps=5,
+        speed_factor=50,
     ) -> ActuatorPositions:
-        xyz = target_pose.xyz
-        rpy = target_pose.rpy
-        if initial_joint_positions is None:
-            initial_position = None  # unknown initial_position
+        oMdes = ActuatorPositions.forward_kinematics_pinocchio_based(
+            robot=robot,
+            joint_positions=initial_joint_positions,
+            return_se3_object=True,
+        )
+
+        current_time = datetime.now()
+
+        oMdes.translation = target_pose.xyz
+
+        rotation_delta = Rotation.from_euler("XYZ", target_pose.rpy, degrees=True)
+        rotation_current = Rotation.from_matrix(oMdes.rotation)
+        rotation_target: Rotation = rotation_delta * rotation_current
+        rotation_matrix = pinocchio.Jlog3(rotation_target.as_matrix())
+        oMdes.rotation = rotation_matrix
+
+        dMi = oMdes.actInv(robot.data.oMi[-1])  # find transformation between two frames
+        err = pinocchio.log(dMi).vector
+        err_norm = np.linalg.norm(err)
+
+        # todo: a known issue where xyz and rpy has different scale
+        # use different eps for xyz and rpy
+        if err_norm > eps:
+            logging.debug(f"Solver error norm: {err_norm}")
+            ik_solved_positions = None
         else:
-            initial_position = np.radians(
-                np.concatenate([[0], initial_joint_positions, [0]])
+            joint_id = len(initial_joint_positions) + 1  # id of the dummy_object_link
+            joint_configuration = np.radians(
+                np.array(list(initial_joint_positions) + [0])
             )
-        target_orientation = Rotation.from_euler("XYZ", rpy, degrees=True).as_matrix()
 
-        # if align all, or only z or only pos
-        if solver_mode == SolverMode.FORWARD:
-            orientation_mode = "Z"
-            target_orientation = [0, 1, 0]
-        elif solver_mode == SolverMode.ALL:
-            orientation_mode = "all"  # convention keyword of ikpy
-            # target_orientation = target_orientation
-        elif solver_mode == SolverMode.Z:
-            # to align with unit vector of z axis -- because gripper was pointing upwards at installation
-            orientation_mode = "Z"
-            target_orientation = target_orientation[:, 2]
-        elif solver_mode == SolverMode.NONE:
-            orientation_mode = None
-            target_orientation = None
-        else:
-            raise Exception(f"Unexpected solver_mode == {solver_mode}")
+            jointJacobian = pinocchio.computeJointJacobian(
+                robot.model, robot.data, joint_configuration, joint_id
+            )  # calculate jacobian
+            velocity = -jointJacobian.T.dot(
+                np.linalg.solve(
+                    jointJacobian.dot(jointJacobian.T) + damp * np.eye(6), err
+                )
+            )  # calculate velocity in configuration space
 
-        try:
-            joint_positions = robot_chain.inverse_kinematics(
-                target_position=xyz,
-                initial_position=initial_position,
-                target_orientation=target_orientation,
-                orientation_mode=orientation_mode,
+            joint_positions = pinocchio.integrate(
+                robot.model,
+                joint_configuration,
+                velocity * time_delta_ms / speed_factor,
             )
-        except Exception as e:
-            logging.warning(
-                f"Skipped IK for {orientation_mode}, exception: {e}. orientation_mode == {orientation_mode} initial_position == {initial_position}"
-            )
-            return None
-
-        joint_positions = (
-            joint_positions[1:7] * 180.0 / np.pi
-        )  # [1:7] to remove base_link and gripper link
-
-        if not skip_validation:
-            joint_positions, expected_pose = EndeffectorPose.validate_ik_fk(
-                robot_chain=robot_chain,
-                intended_pose_vector=target_pose.pose,
-                new_joint_positions_sent_to_hardware=joint_positions,
-            )
-        if joint_positions is None:
-            return None
-        else:
-            return ActuatorPositions(
+            joint_positions = np.degrees(joint_positions)[
+                :-1
+            ]  # remove the dummy_object_link
+            ik_solved_positions = ActuatorPositions(
                 joint_positions=joint_positions,
-                gripper_position=target_pose.gripper_position,
-                expected_pose=expected_pose,
+                gripper_position=gripper_position,
+                expected_pose=target_pose,
             )
 
-    @staticmethod
-    def validate_ik_fk(
-        robot_chain,
-        intended_pose_vector,
-        new_joint_positions_sent_to_hardware: collections.abc.Sequence,
-        use_ikpy=True,
-    ):
-        if use_ikpy:
-            estimated_ee_pose_vector = (
-                ActuatorPositions(joint_positions=new_joint_positions_sent_to_hardware)
-                .forward_kinematics_ikpy(robot_chain=robot_chain)
-                .pose
-            )
-        else:
-            estimated_ee_pose = ActuatorPositions(
-                joint_positions=new_joint_positions_sent_to_hardware
-            ).forward_kinematics_math_based()
-            estimated_ee_pose_vector = estimated_ee_pose["endeffector_pose_intrinsic"]
-
-        if EndeffectorPose.pose_all_close(
-            intended_pose_vector, estimated_ee_pose_vector
-        ):
-            validated_positions = new_joint_positions_sent_to_hardware
-        else:
-            validated_positions = None
-        return validated_positions, estimated_ee_pose_vector
-
-    @staticmethod
-    def pose_all_close(
-        pose_a,
-        pose_b,
-        tolerance={
-            "xyz_atol": 7,  # mm
-            "rpy_atol": 7,  # degrees
-        },
-    ):
-        if pose_a is None and pose_b is None:
-            return True
-        if pose_a is None or pose_b is None:
-            return False
-        xyz_validated = np.allclose(
-            a=pose_a[:3],
-            b=pose_b[:3],
-            atol=tolerance["xyz_atol"],
+        logging.debug(
+            f"inverse_kinematics_pinocchio_based elapsed time: {(datetime.now() - current_time).total_seconds() * 1000.0}ms"
         )
-        rpy_validated = np.allclose(
-            a=pose_a[3:6],
-            b=pose_b[3:6],
-            atol=tolerance["rpy_atol"],
-        )
-        return xyz_validated and rpy_validated
-
-    @staticmethod
-    # Credits to ChatGPT. When asked:
-    # "use scipy, write code to transform a positional and orientational pose vector of shape (6,), which contains [x,y,z,roll,pitch,yaw], named input_pose, where roll pitch yaw are already in degrees, convert it into an affine matrix of (4,4) named affine_matrix"
-    # Aside from mistaken intrinsic to 'xyz', instead of 'XYZ', its response was copy pasted as-is:
-    def pose_to_affine(input_pose):
-        # Extract the translation and rotation values from the pose vector
-        tx, ty, tz, roll, pitch, yaw = input_pose
-
-        # Compute the rotation matrix using the given Euler angles in degrees
-        r = Rotation.from_euler(
-            "XYZ", [np.radians(roll), np.radians(pitch), np.radians(yaw)], degrees=False
-        )
-        R = r.as_matrix()
-
-        # Construct the affine matrix using the translation and rotation values
-        affine_matrix = np.eye(4)
-        affine_matrix[:3, :3] = R
-        affine_matrix[:3, 3] = [tx, ty, tz]
-
-        return affine_matrix
+        return ik_solved_positions
 
     def inverse_kinematics_ml_based(self, initial_joint_positions, current_pose):
         initial_joint_positions = np.array(initial_joint_positions, dtype=np.float32)
@@ -619,54 +546,6 @@ class EndeffectorPose(ArmPosition):
             sequence=inferenced_actuator_positions
         )
         return np.append(inferenced_actuator_positions, self.gripper_position)
-
-    def inverse_kinematics_cached(
-        self, orientation=SolverMode.FORWARD
-    ) -> ActuatorPositions:
-        if orientation == SolverMode.FORWARD:
-            orientation = (-90, 0, 0)
-            evaluation_unit = self.ik_caches["evaluation_unit"]
-            initial_xyz = self.ik_caches[orientation]["initial_xyz"]
-            initial_positions = self.ik_caches[orientation]["initial_positions"]
-            ik_cache = self.ik_caches[orientation]["ik_cache"]
-        else:
-            raise Exception(f"Not supported yet {orientation}")
-
-        xyz_relative = self.xyz - np.array(
-            initial_xyz
-        )  # recenter origin to initial_xyz
-        rounding_delta = (
-            xyz_relative - np.floor(xyz_relative / evaluation_unit) * evaluation_unit
-        )
-        rounded_down_xyz = self.xyz - rounding_delta
-        total_weight = 0
-        total_weighted_positions = np.zeros(len(initial_positions))
-        for offset in (  # loop over corners of the cube around xyz
-            (0, 0, 0),  # left back bottom
-            (1, 0, 0),  # right back bottom
-            (0, 1, 0),  # left front bottom
-            (1, 1, 0),  # right front bottom
-            (0, 0, 1),  # left back top
-            (1, 0, 1),  # right back top
-            (0, 1, 1),  # left front top
-            (1, 1, 1),  # right front top
-        ):
-            xyz_key = EndeffectorPose.to_fix_point(
-                rounded_down_xyz + np.array(offset) * evaluation_unit
-            )
-            if ik_cache.get(xyz_key, None) is None:
-                continue
-            distance = np.sum(np.square(self.xyz - np.array(xyz_key))) ** 0.5
-            total_weighted_positions += ik_cache[xyz_key] * distance
-            total_weight += distance
-
-        if total_weight == 0:
-            return None
-        else:
-            target_positions = total_weighted_positions / total_weight
-            return ActuatorPositions(
-                joint_positions=target_positions, gripper_position=self.gripper_position
-            )
 
     @staticmethod
     def to_fix_point(float_vector):

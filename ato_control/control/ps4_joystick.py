@@ -129,13 +129,6 @@ class Ps4Joystick(Controller, InputDeviceInterface):
                 ],
             )
         )
-        # todo: remove this block, which temporary siables cartesian mode
-        # currently secretly bypass with when flood logging is enabled
-        if not self.controller_states[ControllerStates.LOG_INFO_EACH_TENTHS_SECOND]:
-            mapping[Button.UP] = ControllerStates.IN_JOINT_SPACE_MODE
-            mapping[
-                Button.DOWN
-            ] = ControllerStates.IN_JOINT_SPACE_MODE  # also diabling for now
         return mapping
 
     def __update_input_states(self, key, value):
@@ -384,8 +377,6 @@ class Ps4Joystick(Controller, InputDeviceInterface):
     def on_R3_release(self):
         """R3 joystick is released after the click. This event is only detected when connecting without ds4drv"""
         self.__joystick_internal_states[Button.R3] = False
-        if self.in_cartesian_mode:
-            self._arm_controller_obj.switch_forward_orientation_mode()
         self._arm_controller_obj.replay_trajectory()
         logging.debug("on_R3_release")
 
@@ -394,9 +385,9 @@ class Ps4Joystick(Controller, InputDeviceInterface):
 
     def on_options_release(self):
         if self.arm_controller_running:
-            self._arm_controller_obj.stop_controller_thread()
+            self._arm_controller_obj.stop_threads()
         else:
-            self._arm_controller_obj.start_controller_thread()
+            self._arm_controller_obj.start_threads()
         logging.debug("on_options_release")
 
     def on_share_press(self):
@@ -405,8 +396,7 @@ class Ps4Joystick(Controller, InputDeviceInterface):
 
     def on_share_release(self):
         """this event is only detected when connecting without ds4drv"""
-        if self.in_setting_mode:
-            self.controller_states[ControllerStates.LOG_INFO_EACH_TENTHS_SECOND] ^= True
+        self.controller_states[ControllerStates.LOG_INFO_EACH_TENTH_SECOND] ^= True
         logging.debug("on_share_release")
 
     def on_playstation_button_press(self):

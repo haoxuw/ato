@@ -15,7 +15,6 @@ from learn_kinematics import forward_kinematics, inverse_kinematics, pl_module_w
 
 def get_args():
     parser = argparse.ArgumentParser()
-    # todo: specify 6 segments
     parser.add_argument(
         "--training_data_filepath_prefix",
         type=str,

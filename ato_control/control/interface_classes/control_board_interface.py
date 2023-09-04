@@ -17,9 +17,5 @@ class ControlBoardInterface(ABC):
         pass
 
     @abstractmethod
-    def reset_pos(self):
-        pass
-
-    @abstractmethod
     def turn_off(self, header_id, show_info=False):
         pass

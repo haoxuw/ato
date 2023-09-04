@@ -21,15 +21,17 @@ from typing import Dict, Tuple
 
 import matplotlib.pyplot as plt
 import numpy as np
+import pinocchio
 from control import arm_position, arm_trajectory, ps4_joystick, raspberry_pi
 from control.config_and_enums.arm_connection_config import (
     ActuatorPurpose,
     ArmConnectionAttributes,
     ServoConnectionConfig,
 )
-from control.config_and_enums.controller_enums import ControllerStates, SolverMode
+from control.config_and_enums.controller_enums import ControllerStates
 from control.interface_classes import servo_interface
 from matplotlib.animation import FuncAnimation
+from pinocchio import robot_wrapper
 from scipy.spatial.transform import Rotation
 
 
@@ -42,12 +44,10 @@ class ArmController:
         frame_rate=100,
         auto_save_controller_states_to_file=True,
         actuator_velocities_deg_per_ms=tuple(
-            i * 0.01 for i in range(1, 10)
+            i * 0.02 for i in range(1, 10)
         ),  # angular velocity
         cartesian_velocities_mm__per_ms=tuple(i * 0.01 for i in range(1, 10)),
-        initial_velocity_level=6,
-        use_cached_ik=False,
-        ik_cache_filepath_prefix="~/.ato/ik_cache",
+        initial_velocity_level=3,
         home_folder_path="~/.ato/",
     ):
         self._input_states = None
@@ -63,14 +63,6 @@ class ArmController:
         self._indexed_servo_configs: Tuple[ServoConnectionConfig]
         self._indexed_segment_lengths: Tuple[float]
         self._gripper_length: float
-        self._use_cached_ik = use_cached_ik
-        self._ik_cache_filepath_prefix = ik_cache_filepath_prefix
-        if self._use_cached_ik:
-            self.ik_cache_available = arm_position.EndeffectorPose.load_ik_cache(
-                file_path=self._get_ik_cache_file_path(
-                    ik_cache_filepath_prefix=self._ik_cache_filepath_prefix
-                )
-            )
 
         (
             self._indexed_servo_names,
@@ -117,10 +109,17 @@ class ArmController:
             "urdf",
             arm_segments_config[ArmConnectionAttributes.URDF_FILENAME],
         )
-        arm_position.EndeffectorPose.set_robot_chain_filename(
-            urdf_filename=urdf_filename
-        )
-        self.__robot_chain = None
+
+        try:
+            self.robot: pinocchio.robot_wrapper.RobotWrapper = (
+                robot_wrapper.RobotWrapper.BuildFromURDF(urdf_filename)
+            )  # Add pinocchio wrapper
+        except Exception as e:
+            logging.warning(
+                f"Failed to load robot from urdf_filename: {urdf_filename}, {e}"
+            )
+            logging.warning(f"Inverse kinematics will not be available.")
+            self.robot = None
 
         self.frame_rate = frame_rate
         self.interval_ms = 1000 // frame_rate
@@ -138,15 +137,13 @@ class ArmController:
 
         # trajectory replay (joint space)
         self.__trajectory_saved: arm_trajectory.TrajectoryActuatorPositions = None
-        self.__trajectory_to_play: dict = None
+        self.__trajectory_to_play: arm_trajectory.ArmTrajectory = None
 
         # joint space control: tracks current position of actuators
-        self.__current_actuator_positions = None
+        self.__current_actuator_position_obj = None
         self.__current_actuator_position_forward_kinematics = None
 
         self.__moving_towards_positions_delta = None
-
-        self.__solver_priorities = (SolverMode.FORWARD,)
 
         # cartesian space control, tracks:
         # where is the intended pose
@@ -156,7 +153,7 @@ class ArmController:
         # where is the attempted joint positions == IK(attempted pose)
         # self.__attempted_joint_positions: motion.ActuatorPositions = None
         # where is the current joint positions, max velocity may not keep up achieving the attempted
-        # is self.__current_actuator_positions
+        # is self.__current_actuator_position_obj
 
         self.reset_input_states()
         self.reset_controller_flags()
@@ -184,7 +181,7 @@ class ArmController:
     def is_at_home_positions(self):
         return np.allclose(
             self.home_positions,
-            self.__get_indexed_actuator_positions(),
+            self.__fetch_indexed_actuator_positions(),
             rtol=0.001,
         )  # 0.1% tolerance
 
@@ -195,7 +192,7 @@ class ArmController:
         # customization of home_positions via config is not allowed
         # those hard coded values works with ik cache
         if num_segments == 3:
-            return (0, 60, 0, -100, 0, -50, 0)
+            return (0, 60, 0, -100, 0, -30, 0)
             # or (0, 20, 0, -80, 0, -30, 0),
         elif num_segments == 2:
             return (0, -20, 0, -70, 0)
@@ -208,8 +205,8 @@ class ArmController:
 
     def reset_controller_flags(self):
         self.__controller_states = {
-            ControllerStates.LOG_INFO_EACH_TENTHS_SECOND: False,
-            ControllerStates.CURRENT_MODE: ControllerStates.DEFAULT,
+            ControllerStates.LOG_INFO_EACH_TENTH_SECOND: False,
+            ControllerStates.CURRENT_MODE: ControllerStates.DEFAULT_MODE,
             ControllerStates.RECORDING_ON: None,
         }
 
@@ -235,6 +232,7 @@ class ArmController:
     def set_controller_mode(self, mode):
         assert mode in self.controller_modes
         self.update_controller_state(key=ControllerStates.CURRENT_MODE, value=mode)
+        logging.info(f"Switched to {mode} mode")
         self.reset_input_states()
 
     def update_controller_state(self, key, value):
@@ -243,12 +241,6 @@ class ArmController:
     @property
     def controller_mode(self):
         return self.__controller_states[ControllerStates.CURRENT_MODE]
-
-    @property
-    def robot_chain(self):
-        if self.__robot_chain is None:
-            self.__robot_chain = arm_position.EndeffectorPose.get_ikpy_robot_chain()
-        return self.__robot_chain
 
     def is_thread_running(self):
         if self.__controller_thread is None:
@@ -358,11 +350,11 @@ class ArmController:
     def replay_trajectory(self):
         if self.__trajectory_saved is None:
             return
-        logging.debug(f"Replaying: {self.__trajectory_saved}")
+        logging.info(f"Replaying: {self.__trajectory_saved}")
         trajectory = (
             arm_trajectory.TrajectoryActuatorPositions.prepend_reposition_to_trajectory(
                 target_trajectory=self.__trajectory_saved,
-                current_positions=self.__get_current_actuator_position_obj(),
+                current_positions=self.__get_cached_current_actuator_position_obj(),
                 velocities=self.actuator_velocities_scaled,
             )
         )
@@ -392,44 +384,36 @@ class ArmController:
         self,
         target_pose: arm_position.EndeffectorPose,
         time_delta_ms: float,
-        skip_validation=False,
-        use_initial_joint_positions=True,
         restrict_max_speed=True,
+        use_math_based_impl=False,
     ):
 
-        start_time = datetime.now()
-        actuator_positions = self.__get_indexed_actuator_positions()
-        if use_initial_joint_positions:
-            initial_joint_positions = actuator_positions[:-1]  # remove gripper
+        actuator_positions = self.__fetch_indexed_actuator_positions()
+
+        ik_solved_positions = (
+            arm_position.EndeffectorPose.inverse_kinematics_pinocchio_based(
+                robot=self.robot,
+                target_pose=target_pose,
+                time_delta_ms=time_delta_ms,
+                initial_joint_positions=actuator_positions[:-1],
+                gripper_position=actuator_positions[-1],
+            )
+        )
+
+        if ik_solved_positions is None:
+            logging.info(f"Failed to solve @{target_pose}")
+            return None, None
         else:
-            initial_joint_positions = None
+            start_time = datetime.now()
+            current_actuator_positions = np.array(
+                self.__fetch_indexed_actuator_positions()
+            )
+            positions_delta = (
+                ik_solved_positions.actuator_positions - current_actuator_positions
+            )
+            resulted_pose = ik_solved_positions.expected_pose
 
-        target_positions = None
-        expected_pose = None
-        positions_delta = None
-
-        for solver_mode in self.__solver_priorities:
-            if (
-                self._use_cached_ik
-                and self.ik_cache_available
-                and self.__solver_priorities == (SolverMode.FORWARD,)
-                and self.num_segments == 3
-            ):  # todo: ik_cache only support forward mode 3 segments arm for now
-                target_positions = target_pose.inverse_kinematics_cached()
-            else:
-                target_positions = arm_position.EndeffectorPose.inverse_kinematics_ikpy(
-                    robot_chain=self.robot_chain,
-                    target_pose=target_pose,
-                    initial_joint_positions=initial_joint_positions,
-                    solver_mode=solver_mode,
-                    skip_validation=skip_validation,
-                )
-            if target_positions is not None:
-                expected_pose = target_positions.expected_pose
-                positions_delta = target_positions.actuator_positions - np.array(
-                    self.__get_indexed_actuator_positions()
-                )
-
+            if restrict_max_speed:
                 joint_velocity_limits = (
                     np.array(
                         [
@@ -440,36 +424,45 @@ class ArmController:
                     * self.actuator_velocity
                     * time_delta_ms
                 )
+
                 positions_normalization_ratio = np.max(
                     np.abs(positions_delta / joint_velocity_limits)
                 )
 
-                if restrict_max_speed:
-                    if positions_normalization_ratio > 1:
-                        positions_delta /= positions_normalization_ratio
-                logging.debug(
-                    (
-                        "Will move with delta: ",
-                        positions_delta,
-                        positions_normalization_ratio,
+                if positions_normalization_ratio > 1:
+                    positions_delta /= positions_normalization_ratio
+                    logging.info(
+                        f"applied positions_normalization_ratio: {positions_normalization_ratio}"
                     )
-                )
-                break
-            else:
-                logging.debug(f"Failed to solve @{solver_mode}")
 
-        # update perf stats
-        ik_solving_time = (datetime.now() - start_time).total_seconds() * 1000.0
-        if self.solver_perf_stats["avg_time_ms"] is None:
-            self.solver_perf_stats["avg_time_ms"] = ik_solving_time
-        else:
-            self.solver_perf_stats["avg_time_ms"] = (
-                self.solver_perf_stats["avg_time_ms"] * self.solver_perf_stats["count"]
-                + ik_solving_time
-            ) / (self.solver_perf_stats["count"] + 1)
-        self.solver_perf_stats["count"] += 1
-        logging.debug(self.solver_perf_stats)
-        return positions_delta, expected_pose
+                if use_math_based_impl:
+                    actuator_positions = current_actuator_positions + positions_delta
+                    resulted_pose = (
+                        arm_position.ActuatorPositions.forward_kinematics_math_based(
+                            joint_positions=actuator_positions[:-1],  # remove gripper
+                        )["endeffector_pose_intrinsic"]
+                    )
+                else:
+                    actuator_positions = current_actuator_positions + positions_delta
+                    resulted_pose = arm_position.ActuatorPositions.forward_kinematics_pinocchio_based(
+                        robot=self.robot,
+                        joint_positions=actuator_positions[:-1],  # remove gripper
+                    )
+
+            # update perf stats
+            ik_solving_time = (datetime.now() - start_time).total_seconds() * 1000.0
+            if self.solver_perf_stats["avg_time_ms"] is None:
+                self.solver_perf_stats["avg_time_ms"] = ik_solving_time
+            else:
+                self.solver_perf_stats["avg_time_ms"] = (
+                    self.solver_perf_stats["avg_time_ms"]
+                    * self.solver_perf_stats["count"]
+                    + ik_solving_time
+                ) / (self.solver_perf_stats["count"] + 1)
+            self.solver_perf_stats["count"] += 1
+            logging.debug(self.solver_perf_stats)
+
+            return positions_delta, resulted_pose
 
     def move_to_installation_position(self):
         for servo in self._indexed_servo_objs:
@@ -487,16 +480,6 @@ class ArmController:
                 actuator_positions=self.home_positions
             )
             self.move_to_actuator_positions(actuator_positions=actuator_positions)
-
-    def switch_forward_orientation_mode(self):
-        if self.__solver_priorities == (SolverMode.FORWARD,):
-            self.__solver_priorities = (
-                SolverMode.ALL,
-                SolverMode.Z,
-                SolverMode.FORWARD,
-            )  # order matters
-        else:
-            self.__solver_priorities = (SolverMode.FORWARD,)
 
     def reset_trajectory_in_editing(self):
         self.__trajectory_in_editing: arm_trajectory.TrajectoryActuatorPositions = (
@@ -524,20 +507,20 @@ class ArmController:
     def trajectory_in_editing_append_waypoint(self):
         if len(self.__trajectory_in_editing) == 0:
             self.__trajectory_in_editing.append(
-                timestamp_delta=0, positions=self.__get_current_actuator_position_obj()
+                timestamp_delta=0,
+                positions=self.__get_cached_current_actuator_position_obj(),
             )
         else:
             self.__trajectory_in_editing.append_waypoint(
-                waypoint=self.__get_current_actuator_position_obj(),
+                waypoint=self.__get_cached_current_actuator_position_obj(),
                 velocities=self.actuator_velocities_scaled,
             )
 
-    def trajectory_in_editing_append_pause(
-        self, pause_sec=1
-    ):  # todo change to trajectory_in_editing
+    def trajectory_in_editing_append_pause(self, pause_sec=1):
         if len(self.__trajectory_in_editing) == 0:
             self.__trajectory_in_editing.append(
-                timestamp_delta=0, positions=self.__get_current_actuator_position_obj()
+                timestamp_delta=0,
+                positions=self.__get_cached_current_actuator_position_obj(),
             )
         self.__trajectory_in_editing.append_pause(pause_sec=pause_sec)
 
@@ -684,7 +667,7 @@ class ArmController:
         trajectory = (
             arm_trajectory.TrajectoryActuatorPositions.prepend_reposition_to_trajectory(
                 target_trajectory=trajectory,
-                current_positions=self.__get_current_actuator_position_obj(),
+                current_positions=self.__get_cached_current_actuator_position_obj(),
                 velocities=self.actuator_velocities_scaled,
                 pause_sec=pause_sec,
             )
@@ -724,7 +707,7 @@ class ArmController:
 
     def __advance_clock(self, current_time, time_delta_ms):
         show_info = not self.__controller_states[
-            ControllerStates.LOG_INFO_EACH_TENTHS_SECOND
+            ControllerStates.LOG_INFO_EACH_TENTH_SECOND
         ]
         if self.is_playing_trajectory(current_time=current_time):
             self.__moving_towards_positions_delta = None
@@ -749,29 +732,41 @@ class ArmController:
                 time_delta_ms=time_delta_ms,
             )
             if intended_pose is None:
-                # only move if there's user input, to prevent out of control scenario
-                # but reset intended pose to recenter
+                # case 1: no user input
+                #   Movement: no
+                #   Reset intended: yes
+                # never move if no user input, to prevent out of control scenario
                 self.__update_intended_pose_to_current_pose()
             else:
                 (
                     positions_delta,
-                    expected_pose,
+                    resulted_pose,
                 ) = self.__solve_valid_movements_from_target_pose(
                     target_pose=intended_pose, time_delta_ms=time_delta_ms
                 )
 
-                if positions_delta is None:  # no solution, then follow momentum
-                    positions_delta = self.__moving_towards_positions_delta
-                else:  # has solution, then update momentum
+                if positions_delta is not None:
+                    # case 2: found valid movements
+                    #   Movement: yes
+                    #   Reset intended: yes
                     self.__moving_towards_positions_delta = positions_delta
-                    assert expected_pose is not None
+                    assert resulted_pose is not None
                     self._intended_pose = arm_position.EndeffectorPose(
-                        pose=expected_pose
+                        pose=resulted_pose
                     )
 
-                self._move_servos_by_joint_space_delta(
-                    joint_positions_delta=self.__moving_towards_positions_delta
-                )
+                    self._move_servos_by_joint_space_delta(
+                        joint_positions_delta=self.__moving_towards_positions_delta
+                    )
+                    self.__update_intended_pose_to_current_pose()
+                else:
+                    # case 3: can't solve for valid movements
+                    #   Movement: no
+                    #   Reset intended: no
+                    # if user input continues, the intented pose and actual current pose will diverge
+                    # this makes it easier recovering from bad states, i.e. states that leads to deadends
+                    pass
+
                 self._intended_pose = intended_pose
 
         elif (
@@ -844,7 +839,7 @@ class ArmController:
 
     def __do_internal_updates_for_current_actuator_positions(self):
         # calculate forward_kinematics and cache
-        self.__get_current_actuator_position_obj(refresh=True)
+        self.__get_cached_current_actuator_position_obj(refresh=True)
         self.__get_current_actuator_position_forward_kinematics(refresh=True)
 
         recording_on: Tuple = self.__controller_states[ControllerStates.RECORDING_ON]
@@ -859,7 +854,7 @@ class ArmController:
             )
             self.__trajectory_in_editing.append(
                 timestamp_delta=delta,
-                positions=self.__get_current_actuator_position_obj(),
+                positions=self.__get_cached_current_actuator_position_obj(),
             )
 
     def arm_controller_thread_loop(
@@ -875,16 +870,23 @@ class ArmController:
                 break
             current = datetime.now()
 
+            time_delta_sec = int(
+                (last - self.__controller_start_time).total_seconds()
+            ) - int((current - self.__controller_start_time).total_seconds())
             time_delta_tenths_sec = int(
                 (last - self.__controller_start_time).total_seconds() * 10
             ) - int((current - self.__controller_start_time).total_seconds() * 10)
             time_delta_ms = (current - last).total_seconds() * 1000
 
             if (
-                self.__controller_states[ControllerStates.LOG_INFO_EACH_TENTHS_SECOND]
+                self.__controller_states[ControllerStates.LOG_INFO_EACH_TENTH_SECOND]
                 and time_delta_tenths_sec < 0
             ):
                 self.__refresh_states_display()
+            if time_delta_sec < 0:
+                self.save_controller_states(
+                    dry_run=not self.__auto_save_controller_states_to_file
+                )
 
             # this call could take time, so simply sleep(self.interval) wouldn't be precise
             if time_delta_ms >= interval_ms:
@@ -893,10 +895,8 @@ class ArmController:
                     time_delta_ms=time_delta_ms,
                 )
                 self.__do_internal_updates_for_current_actuator_positions()
-                self.save_controller_states(
-                    dry_run=not self.__auto_save_controller_states_to_file
-                )
                 last = datetime.now()
+
             time.sleep(interval_ms / 1000)
         self.__to_stop_clock = False
         logging.info(f"Thread for Arm Controller stopped.")
@@ -1062,17 +1062,16 @@ class ArmController:
         )
         math_based_current_pose = self.__get_endeffector_pose()
         # ml_fk_pose = (
-        #     self.__get_current_actuator_position_obj().forward_kinematics_ml_based()
+        #     self.__get_cached_current_actuator_position_obj().forward_kinematics_ml_based()
         # )
         return f"{time_str} @activated_segment_ids={self.activated_segment_ids} $velocity deg/ms={self.actuator_velocity} {self.frame_rate}hz\n{actuator_states}\nMath-based EE estimate={math_based_current_pose}\n"
 
-    def _get_ik_cache_file_path(self, ik_cache_filepath_prefix):
-        arm_config_name = "ato_3_seg_270_deg"
-        return os.path.expanduser(f"{ik_cache_filepath_prefix}_{arm_config_name}.npy")
-
     # the Sequence_Index would match self._indexed_ variables
-    def __get_indexed_actuator_positions(self):
+    def __fetch_indexed_actuator_positions(self):
         return tuple((obj.payload_position for obj in self._indexed_servo_objs))
+
+    def __fetch_indexed_joint_positions(self):
+        return self.__fetch_indexed_actuator_positions()[:-1]
 
     def _get_indexed_rotation_ranges(self):
         return np.array(
@@ -1082,23 +1081,26 @@ class ArmController:
     def __get_index_by_servo_name(self, name):
         return self._inverse_indexed_servo_names[name]
 
-    def __get_current_actuator_position_obj(
+    def __get_cached_current_actuator_position_obj(
         self, refresh=False
     ) -> arm_position.ActuatorPositions:
-        if refresh or self.__current_actuator_positions is None:
-            positions = self.__get_indexed_actuator_positions()
+        if refresh or self.__current_actuator_position_obj is None:
+            positions = self.__fetch_indexed_actuator_positions()
             assert isinstance(positions[0], numbers.Number), type(positions[0])
-            self.__current_actuator_positions = arm_position.ActuatorPositions(
+            self.__current_actuator_position_obj = arm_position.ActuatorPositions(
                 actuator_positions=positions
             )
-        return self.__current_actuator_positions
+        return self.__current_actuator_position_obj
 
     def __get_current_actuator_position_forward_kinematics(self, refresh=False):
         if arm_position.ActuatorPositions.is_ready() and (
             refresh or self.__current_actuator_position_forward_kinematics is None
         ):
+            joint_positions = self.__fetch_indexed_joint_positions()
             self.__current_actuator_position_forward_kinematics = (
-                self.__get_current_actuator_position_obj().forward_kinematics_math_based()
+                arm_position.ActuatorPositions.forward_kinematics_math_based(
+                    joint_positions=joint_positions
+                )
             )
         return self.__current_actuator_position_forward_kinematics
 

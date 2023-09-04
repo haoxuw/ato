@@ -237,18 +237,28 @@ class TrajectoryEndeffectorPose(ArmTrajectory):
         assert starting_positions is not None
 
         actuator_positions_trajectory = TrajectoryActuatorPositions()
-        current_positions = np.array(starting_positions.joint_positions)
+        current_actuator_positions = np.array(starting_positions.actuator_positions)
+        current_timestamp = 0
         for index in range(1, len(self.trajectory)):
-            timestamp, new_pose = self.trajectory[index]
+            new_timestamp, new_pose = self.trajectory[index]
             new_pose: EndeffectorPose
-            new_positions, _ = new_pose.inverse_kinematics_ikpy(
-                initial_joint_positions=current_positions[:-1],
+            time_delta_ms = new_timestamp - current_timestamp
+            current_timestamp = new_timestamp
+
+            new_positions: ActuatorPositions = (
+                EndeffectorPose.inverse_kinematics_pinocchio_based(
+                    robot=self.robot,
+                    target_pose=new_pose.pose,
+                    time_delta_ms=time_delta_ms,
+                    initial_joint_positions=current_actuator_positions[:-1],
+                    gripper_position=current_actuator_positions[-1],
+                )
             )
             if new_positions is None:
                 continue
             actuator_positions_trajectory.append(
-                timestamp_delta=timestamp,
-                positions=ActuatorPositions(joint_positions=new_positions),
+                timestamp_delta=time_delta_ms,
+                positions=new_positions,
             )
-            current_positions = new_positions
+            current_actuator_positions = new_positions.actuator_positions
         return actuator_positions_trajectory
