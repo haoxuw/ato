@@ -12,6 +12,6 @@ from . import (
     gripper_bone,
     gripper_dragon,
     gripper_dragon_with_servo,
-    gripper_using_cog,
+    gripper_tri_sticks_with_servo,
     gripper_using_jaw,
 )

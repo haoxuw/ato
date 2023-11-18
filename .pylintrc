@@ -32,4 +32,5 @@ disable=
     no-else-return,
     cyclic-import,
     too-many-branches,
-    duplicate-code
+    duplicate-code,
+    c-extension-no-member

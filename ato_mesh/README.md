@@ -29,9 +29,9 @@ Tested under ubuntu 20+, python 3.9+, see examples in `ci.yaml`.
 
 ### Generate STL files
 
-> $ ./ato_mesh/scripts/generate_shelf.sh --export -o mesh/generated
+> $ ./ato_mesh/scripts/generate_shelf.sh --export -o ./generated
 
-You sure see logs printed to console as color green. The .stl files would be located under `./ato_mesh/mesh/generated/`
+You sure see logs printed to console as color green. The .stl files would be located under `./ato_mesh/generated/`
 
 ## Code architecture
 
