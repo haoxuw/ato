@@ -25,7 +25,10 @@ class GripperBone(bone_separable.BoneSeparable):
         return bone
 
     @abstractmethod
-    def _gripper_(self):
+    def _gripper_rotation_space_(self):
+        pass
+
+    def _gripper_body_mesh_(self):
         pass
 
     @abstractmethod
@@ -35,7 +38,9 @@ class GripperBone(bone_separable.BoneSeparable):
         pass
 
     def model_mesh(self, add_surface_give=False):
-        gripper, gripper_rotation_space = self._gripper_()
+        gripper_rotation_space = self._gripper_rotation_space_()
+        gripper_body_mesh = self._gripper_body_mesh_()
+
         bone = self.__separable_bone_mesh__()
         bone = bone.translate(
             (
@@ -65,7 +70,7 @@ class GripperBone(bone_separable.BoneSeparable):
         )
         bone = bone.cut(cut_box).translate((0, cut_length, 0))
 
-        mesh = gripper.add(bone).cut(gripper_rotation_space)
+        mesh = gripper_body_mesh.add(bone)
         return mesh
 
     def space_mesh(self):
