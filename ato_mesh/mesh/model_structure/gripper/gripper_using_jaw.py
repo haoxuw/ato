@@ -34,9 +34,12 @@ class GripperUsingJaw(gripper_bone.GripperBone):
             .translate(offsets)
         )
 
-    @abstractmethod
-    def _import_decoration_mesh_(self, **kwargs):
-        pass
+    # @abstractmethod
+    def _gripper_body_mesh_(self, **kwargs):
+        """
+        to be overriden
+        """
+        return cq.Workplane(self.workplane_primary)
 
     # tunable base on the mesh
     @abstractmethod
@@ -156,7 +159,7 @@ class GripperUsingJaw(gripper_bone.GripperBone):
 
     # e.g. for the dragon head gripper:
     # make cuts at jawline so that the chin could rotate
-    def __rotation_space__(self, gap_size=0.25):
+    def _gripper_rotation_space_(self, gap_size=0.25):
         (
             center,
             rotation_radius,
@@ -233,11 +236,6 @@ class GripperUsingJaw(gripper_bone.GripperBone):
 
         trimmer = (rectangle).cut(carver_space)
         return rotation_space.cut(trimmer)
-
-    def _gripper_(self):
-        rotation_space = self.__rotation_space__()
-        decoration_mesh = self._import_decoration_mesh_()
-        return decoration_mesh, rotation_space
 
     def printable_mesh(self, face_upwards=True):
         mesh = self.model_mesh(add_surface_give=True)

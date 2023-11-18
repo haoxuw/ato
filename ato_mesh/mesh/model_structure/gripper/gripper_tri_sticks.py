@@ -16,7 +16,7 @@ from mesh.configuration import segment_configuration
 from mesh.model_structure.gripper import gripper_using_jaw
 
 
-class GripperDragon(gripper_using_jaw.GripperUsingJaw):
+class GripperTriSticks(gripper_using_jaw.GripperUsingJaw):
     def __init__(
         self,
         segment_configs: segment_configuration.SegmentConfigs,
@@ -42,4 +42,7 @@ class GripperDragon(gripper_using_jaw.GripperUsingJaw):
         mesh = mesh.translate(offset)
         # turn the head towards +Y
         mesh = mesh.rotate((0, 0, 0), (0, 0, 1), 180)
+
+        # todo
+        mesh = cq.Workplane(self.workplane_primary)
         return mesh
