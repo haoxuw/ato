@@ -14,7 +14,10 @@ import logging
 from mesh.configuration import arm_configuration, segment_configuration
 from mesh.cq_lib import cq_mesh_shelf
 from mesh.model_structure.arm import arm, mount
-from mesh.model_structure.gripper import gripper_dragon_with_servo, gripper_tri_sticks_with_servo
+from mesh.model_structure.gripper import (
+    gripper_dragon_with_servo,
+    gripper_tri_sticks_with_servo,
+)
 from mesh.model_structure.mechanical_parts import (
     allocated_motors,
     bolt,

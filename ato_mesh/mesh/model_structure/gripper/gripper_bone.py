@@ -29,7 +29,7 @@ class GripperBone(bone_separable.BoneSeparable):
         pass
 
     def _gripper_body_mesh_(self):
-        pass
+        return cq.Workplane(self.workplane_primary)
 
     @abstractmethod
     def _bone_cut_length_(self):
@@ -38,7 +38,7 @@ class GripperBone(bone_separable.BoneSeparable):
         pass
 
     def model_mesh(self, add_surface_give=False):
-        gripper_rotation_space = self._gripper_rotation_space_()
+        # gripper_rotation_space = self._gripper_rotation_space_()
         gripper_body_mesh = self._gripper_body_mesh_()
 
         bone = self.__separable_bone_mesh__()

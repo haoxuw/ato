@@ -29,7 +29,7 @@ class GripperTriSticksWithServo(gripper_tri_sticks.GripperTriSticks):
 
     def model_mesh(self, add_surface_give=False):
         dragon_mesh = super().model_mesh(add_surface_give=add_surface_give)
-        # # todo 
+        # # todo
         # return dragon_mesh
 
         servo_support = self._relocate(self.motor_obj.supporting_mesh())
