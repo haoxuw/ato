@@ -146,7 +146,8 @@ def main():
         )
         arm_ctl.start_threads()
         if args.visualize:
-            return arm_ctl.visualize_joints()
+            arm_ctl.visualize_joints_pibullet()
+            arm_ctl.visualize_joints_matplotlib()
     return
 
 

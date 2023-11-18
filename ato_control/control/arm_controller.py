@@ -11,6 +11,7 @@
 import copy
 import json
 import logging
+import math
 import numbers
 import os
 import pathlib
@@ -22,6 +23,7 @@ from typing import Dict, Tuple
 import matplotlib.pyplot as plt
 import numpy as np
 import pinocchio
+import pybullet
 from control import arm_position, arm_trajectory, ps4_joystick, raspberry_pi
 from control.config_and_enums.arm_connection_config import (
     ActuatorPurpose,
@@ -46,7 +48,7 @@ class ArmController:
         actuator_velocities_deg_per_ms=tuple(
             i * 0.02 for i in range(1, 10)
         ),  # angular velocity
-        cartesian_velocities_mm__per_ms=tuple(i * 0.01 for i in range(1, 10)),
+        cartesian_velocities_mm__per_ms=tuple(i * 0.03 for i in range(1, 10)),
         initial_velocity_level=3,
         home_folder_path="~/.ato/",
     ):
@@ -102,7 +104,7 @@ class ArmController:
         )
 
         current_dir = pathlib.Path(__file__).parent
-        urdf_filename = os.path.join(
+        self.urdf_filename = os.path.join(
             current_dir,
             "..",
             "..",
@@ -112,11 +114,11 @@ class ArmController:
 
         try:
             self.robot: pinocchio.robot_wrapper.RobotWrapper = (
-                robot_wrapper.RobotWrapper.BuildFromURDF(urdf_filename)
+                robot_wrapper.RobotWrapper.BuildFromURDF(self.urdf_filename)
             )  # Add pinocchio wrapper
         except Exception as e:
             logging.warning(
-                f"Failed to load robot from urdf_filename: {urdf_filename}, {e}"
+                f"Failed to load robot from urdf_filename: {self.urdf_filename}, {e}"
             )
             logging.warning(f"Inverse kinematics will not be available.")
             self.robot = None
@@ -128,6 +130,7 @@ class ArmController:
 
         self.__controller_thread = None
         self.__to_stop_clock = False
+        self.__to_stop_visualization = False
         self.__segment_id_pointer = 0
 
         # velocity settings
@@ -143,7 +146,7 @@ class ArmController:
         self.__current_actuator_position_obj = None
         self.__current_actuator_position_forward_kinematics = None
 
-        self.__moving_towards_positions_delta = None
+        self.__positions_momentum = None
 
         # cartesian space control, tracks:
         # where is the intended pose
@@ -167,6 +170,12 @@ class ArmController:
 
         self.__controller_start_time = datetime.now()
         self.ready = True
+
+    def __del__(self):
+        try:
+            pybullet.disconnect()
+        except Exception as e:
+            logging.warning(f"Failed to disconnect pybullet, exception: {e}")
 
     def reset_input_states(self):
         # to be override
@@ -192,7 +201,15 @@ class ArmController:
         # customization of home_positions via config is not allowed
         # those hard coded values works with ik cache
         if num_segments == 3:
-            return (0, 60, 0, -100, 0, -30, 0)
+            return (
+                0,
+                60,
+                0,
+                -100,
+                0,
+                -30,
+                0,
+            )  # return (0, 60, 0, -100, 0, -50, 0) after fixing pitch bug
             # or (0, 20, 0, -80, 0, -30, 0),
         elif num_segments == 2:
             return (0, -20, 0, -70, 0)
@@ -354,7 +371,7 @@ class ArmController:
         trajectory = (
             arm_trajectory.TrajectoryActuatorPositions.prepend_reposition_to_trajectory(
                 target_trajectory=self.__trajectory_saved,
-                current_positions=self.__get_cached_current_actuator_position_obj(),
+                current_positions=self.__fetch_cached_actuator_position_obj(),
                 velocities=self.actuator_velocities_scaled,
             )
         )
@@ -384,7 +401,7 @@ class ArmController:
         self,
         target_pose: arm_position.EndeffectorPose,
         time_delta_ms: float,
-        restrict_max_speed=True,
+        restrict_max_speed=False,
         use_math_based_impl=False,
     ):
 
@@ -435,19 +452,20 @@ class ArmController:
                         f"applied positions_normalization_ratio: {positions_normalization_ratio}"
                     )
 
-                if use_math_based_impl:
-                    actuator_positions = current_actuator_positions + positions_delta
-                    resulted_pose = (
-                        arm_position.ActuatorPositions.forward_kinematics_math_based(
-                            joint_positions=actuator_positions[:-1],  # remove gripper
-                        )["endeffector_pose_intrinsic"]
-                    )
-                else:
-                    actuator_positions = current_actuator_positions + positions_delta
-                    resulted_pose = arm_position.ActuatorPositions.forward_kinematics_pinocchio_based(
+            actuator_positions = current_actuator_positions + positions_delta
+            if use_math_based_impl:
+                resulted_pose = (
+                    arm_position.ActuatorPositions.forward_kinematics_math_based(
+                        joint_positions=actuator_positions[:-1],  # remove gripper
+                    )["endeffector_pose_intrinsic"]
+                )
+            else:
+                resulted_pose = (
+                    arm_position.ActuatorPositions.forward_kinematics_pinocchio_based(
                         robot=self.robot,
                         joint_positions=actuator_positions[:-1],  # remove gripper
                     )
+                )
 
             # update perf stats
             ik_solving_time = (datetime.now() - start_time).total_seconds() * 1000.0
@@ -508,11 +526,11 @@ class ArmController:
         if len(self.__trajectory_in_editing) == 0:
             self.__trajectory_in_editing.append(
                 timestamp_delta=0,
-                positions=self.__get_cached_current_actuator_position_obj(),
+                positions=self.__fetch_cached_actuator_position_obj(),
             )
         else:
             self.__trajectory_in_editing.append_waypoint(
-                waypoint=self.__get_cached_current_actuator_position_obj(),
+                waypoint=self.__fetch_cached_actuator_position_obj(),
                 velocities=self.actuator_velocities_scaled,
             )
 
@@ -520,7 +538,7 @@ class ArmController:
         if len(self.__trajectory_in_editing) == 0:
             self.__trajectory_in_editing.append(
                 timestamp_delta=0,
-                positions=self.__get_cached_current_actuator_position_obj(),
+                positions=self.__fetch_cached_actuator_position_obj(),
             )
         self.__trajectory_in_editing.append_pause(pause_sec=pause_sec)
 
@@ -544,6 +562,7 @@ class ArmController:
     def stop_arm_controller_thread(self):
         if self.__controller_thread is not None:
             self.__to_stop_clock = True
+            self.__to_stop_visualization = True
             self.__controller_thread.join()
             self.__controller_thread = None
         else:
@@ -667,7 +686,7 @@ class ArmController:
         trajectory = (
             arm_trajectory.TrajectoryActuatorPositions.prepend_reposition_to_trajectory(
                 target_trajectory=trajectory,
-                current_positions=self.__get_cached_current_actuator_position_obj(),
+                current_positions=self.__fetch_cached_actuator_position_obj(),
                 velocities=self.actuator_velocities_scaled,
                 pause_sec=pause_sec,
             )
@@ -700,7 +719,7 @@ class ArmController:
 
     def __update_intended_pose_to_current_pose(self, override_pose=None):
         self._intended_pose = arm_position.EndeffectorPose(
-            pose=self.__get_endeffector_pose()
+            pose=self.__fetch_cached_endeffector_pose()
             if override_pose is None
             else override_pose
         )
@@ -710,7 +729,7 @@ class ArmController:
             ControllerStates.LOG_INFO_EACH_TENTH_SECOND
         ]
         if self.is_playing_trajectory(current_time=current_time):
-            self.__moving_towards_positions_delta = None
+            self.__positions_momentum = None
 
             trajectory: arm_position.Trajectory = self.__trajectory_to_play
             since_replay_start_delta = (
@@ -736,7 +755,7 @@ class ArmController:
                 #   Movement: no
                 #   Reset intended: yes
                 # never move if no user input, to prevent out of control scenario
-                self.__update_intended_pose_to_current_pose()
+                pass
             else:
                 (
                     positions_delta,
@@ -749,31 +768,32 @@ class ArmController:
                     # case 2: found valid movements
                     #   Movement: yes
                     #   Reset intended: yes
-                    self.__moving_towards_positions_delta = positions_delta
+                    self.__positions_momentum = positions_delta
                     assert resulted_pose is not None
                     self._intended_pose = arm_position.EndeffectorPose(
                         pose=resulted_pose
                     )
 
                     self._move_servos_by_joint_space_delta(
-                        joint_positions_delta=self.__moving_towards_positions_delta
+                        joint_positions_delta=self.__positions_momentum
                     )
-                    self.__update_intended_pose_to_current_pose()
                 else:
                     # case 3: can't solve for valid movements
                     #   Movement: no
                     #   Reset intended: no
                     # if user input continues, the intented pose and actual current pose will diverge
                     # this makes it easier recovering from bad states, i.e. states that leads to deadends
-                    pass
+                    logging.info(
+                        "No valid movements found __update_intended_pose_to_current_pose"
+                    )
 
-                self._intended_pose = intended_pose
+            self.__update_intended_pose_to_current_pose()
 
         elif (
             self.__controller_states[ControllerStates.CURRENT_MODE]
             == ControllerStates.IN_JOINT_SPACE_MODE
         ):
-            self.__moving_towards_positions_delta = None
+            self.__positions_momentum = None
 
             joint_positions_delta = self._parse_movement_updates_in_joint_space(
                 time_delta_ms=time_delta_ms,
@@ -839,8 +859,8 @@ class ArmController:
 
     def __do_internal_updates_for_current_actuator_positions(self):
         # calculate forward_kinematics and cache
-        self.__get_cached_current_actuator_position_obj(refresh=True)
-        self.__get_current_actuator_position_forward_kinematics(refresh=True)
+        self.__fetch_cached_actuator_position_obj(refresh=True)
+        self.__fetch_cached_forward_kinematics_dict(refresh=True)
 
         recording_on: Tuple = self.__controller_states[ControllerStates.RECORDING_ON]
         if recording_on is not None:
@@ -854,7 +874,7 @@ class ArmController:
             )
             self.__trajectory_in_editing.append(
                 timestamp_delta=delta,
-                positions=self.__get_cached_current_actuator_position_obj(),
+                positions=self.__fetch_cached_actuator_position_obj(),
             )
 
     def arm_controller_thread_loop(
@@ -960,7 +980,49 @@ class ArmController:
         # returns (0, 1), (1, 2), etc.
         return (left_seg_id, right_seg_id)
 
-    def visualize_joints(self):
+    def visualize_joints_pibullet_thread_loop(self, robot_id):
+        while not self.__to_stop_visualization:
+            joint_positions = self.__fetch_indexed_joint_positions()
+            pybullet.stepSimulation()
+            joint_positions_radians = [math.radians(deg) for deg in joint_positions]
+            for joint_index, joint_position in enumerate(joint_positions_radians):
+                pybullet.setJointMotorControl2(
+                    robot_id,
+                    joint_index,
+                    pybullet.POSITION_CONTROL,
+                    targetPosition=joint_position,
+                )
+            time.sleep(0.01)
+
+    def visualize_joints_pibullet(
+        self, scaling_factor=0.01, start_xyz=(0, 0, 0), start_rpy=(0, 0, 0)
+    ):
+        pybullet.connect(pybullet.GUI)
+        pybullet.setGravity(0, 0, 0)  # (0,0,-10)
+        pybullet.resetDebugVisualizerCamera(
+            cameraDistance=12,
+            cameraYaw=15,
+            cameraPitch=-75,
+            cameraTargetPosition=[0, 0, 0],
+        )
+
+        startOrientation = pybullet.getQuaternionFromEuler(start_rpy)
+        robot_id = pybullet.loadURDF(
+            self.urdf_filename,
+            start_xyz,
+            startOrientation,
+            globalScaling=scaling_factor,
+        )
+
+        # create thread
+        # pybullet.setRealTimeSimulation(1)
+        thread = threading.Thread(
+            target=self.visualize_joints_pibullet_thread_loop, args=(robot_id,)
+        )
+        thread.start()
+        return pybullet.getBasePositionAndOrientation(robot_id)
+
+    def visualize_joints_matplotlib(self):
         fig = plt.figure()
         axes_limits = max(self._indexed_segment_lengths) * 3
         ax = plt.axes(projection="3d")
@@ -1001,7 +1063,7 @@ class ArmController:
         plotted_elements = {}
 
         def update(iteration, plotted_elements):
-            kinematics = self.__get_current_actuator_position_forward_kinematics()
+            kinematics = self.__fetch_cached_forward_kinematics_dict()
             plotted_segments[0].set_data_3d(
                 kinematics["segments_xyz"][:, 0],
                 kinematics["segments_xyz"][:, 1],
@@ -1060,18 +1122,11 @@ class ArmController:
         actuator_states = "\n".join(
             [f"{str(servo_obj)}" for servo_obj in self._indexed_servo_objs]
         )
-        math_based_current_pose = self.__get_endeffector_pose()
+        math_based_current_pose = self.__fetch_cached_endeffector_pose()
         # ml_fk_pose = (
-        #     self.__get_cached_current_actuator_position_obj().forward_kinematics_ml_based()
+        #     self.__fetch_cached_actuator_position_obj().forward_kinematics_ml_based()
         # )
         return f"{time_str} @activated_segment_ids={self.activated_segment_ids} $velocity deg/ms={self.actuator_velocity} {self.frame_rate}hz\n{actuator_states}\nMath-based EE estimate={math_based_current_pose}\n"
-
-    # the Sequence_Index would match self._indexed_ variables
-    def __fetch_indexed_actuator_positions(self):
-        return tuple((obj.payload_position for obj in self._indexed_servo_objs))
-
-    def __fetch_indexed_joint_positions(self):
-        return self.__fetch_indexed_actuator_positions()[:-1]
 
     def _get_indexed_rotation_ranges(self):
         return np.array(
@@ -1081,7 +1136,14 @@ class ArmController:
     def __get_index_by_servo_name(self, name):
         return self._inverse_indexed_servo_names[name]
 
-    def __get_cached_current_actuator_position_obj(
+    # the Sequence_Index would match self._indexed_ variables
+    def __fetch_indexed_actuator_positions(self):
+        return tuple((obj.payload_position for obj in self._indexed_servo_objs))
+
+    def __fetch_indexed_joint_positions(self):
+        return self.__fetch_indexed_actuator_positions()[:-1]
+
+    def __fetch_cached_actuator_position_obj(
         self, refresh=False
     ) -> arm_position.ActuatorPositions:
         if refresh or self.__current_actuator_position_obj is None:
@@ -1092,7 +1154,7 @@ class ArmController:
             )
         return self.__current_actuator_position_obj
 
-    def __get_current_actuator_position_forward_kinematics(self, refresh=False):
+    def __fetch_cached_forward_kinematics_dict(self, refresh=False):
         if arm_position.ActuatorPositions.is_ready() and (
             refresh or self.__current_actuator_position_forward_kinematics is None
         ):
@@ -1104,7 +1166,7 @@ class ArmController:
             )
         return self.__current_actuator_position_forward_kinematics
 
-    def __get_endeffector_pose(self):
-        return self.__get_current_actuator_position_forward_kinematics()[
+    def __fetch_cached_endeffector_pose(self):
+        return self.__fetch_cached_forward_kinematics_dict()[
             "endeffector_pose_intrinsic"
         ]
