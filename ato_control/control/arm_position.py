@@ -146,6 +146,7 @@ class ActuatorPositions(ArmPosition):
     def gripper_position(self):
         return self.__gripper_position
 
+    # todo move to a robot_attributes singleton
     @classmethod
     def set_actuator_indices_mapping(cls, actuator_indices_mapping):
         assert isinstance(
@@ -458,17 +459,20 @@ class EndeffectorPose(ArmPosition):
     def __str__(self) -> str:
         return f"XYZ: ({self.x},{self.y},{self.z}); RPY: ({self.roll},{self.pitch},{self.yaw})"
 
+    # todo maybe try move towards
+    # try solve absolute position, rather than delta
+
     @staticmethod
     def inverse_kinematics_pinocchio_based(
         robot: pinocchio.robot_wrapper.RobotWrapper,
         target_pose,
         time_delta_ms: int,
-        initial_joint_positions=None,  # excludes gripper position
+        initial_joint_positions,  # excludes gripper position
         gripper_position=None,
         # todo: what's the best value for the following parameters?
-        damp=1e-12,
-        eps=5,
-        speed_factor=50,
+        damp=1e-2,
+        eps=2,
+        delta_t=0.1,
     ) -> ActuatorPositions:
         oMdes = ActuatorPositions.forward_kinematics_pinocchio_based(
             robot=robot,
@@ -488,12 +492,14 @@ class EndeffectorPose(ArmPosition):
 
         dMi = oMdes.actInv(robot.data.oMi[-1])  # find transformation between two frames
         err = pinocchio.log(dMi).vector
-        err_norm = np.linalg.norm(err)
+        print(pinocchio.log(dMi).vector)
+        weights = (1, 1, 1, 0.05, 0.5, 0.5)  # (wx, wy, wz, wroll, wpitch, wyaw)
+        err_norm = np.linalg.norm(np.multiply(err, weights))
 
         # todo: a known issue where xyz and rpy has different scale
         # use different eps for xyz and rpy
         if err_norm > eps:
-            logging.debug(f"Solver error norm: {err_norm}")
+            logging.warning(f"Solver error norm: {err_norm}")
             ik_solved_positions = None
         else:
             joint_id = len(initial_joint_positions) + 1  # id of the dummy_object_link
@@ -513,7 +519,7 @@ class EndeffectorPose(ArmPosition):
             joint_positions = pinocchio.integrate(
                 robot.model,
                 joint_configuration,
-                velocity * time_delta_ms / speed_factor,
+                velocity * time_delta_ms * delta_t,
             )
             joint_positions = np.degrees(joint_positions)[
                 :-1
