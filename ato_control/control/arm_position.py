@@ -359,7 +359,7 @@ class ActuatorPositions(ArmPosition):
         logging.debug(
             f"forward_kinematics_math_based elapsed time: {(datetime.now() - current_time).total_seconds() * 1000.0}ms"
         )
-        return {
+        pose_detail = {
             "segments_xyz": np.array(segments_xyz),
             "frontend_pose_intrinsic": np.array(
                 np.concatenate([segments_xyz[-1], endeffector_rpy_intrinsic])
@@ -373,6 +373,25 @@ class ActuatorPositions(ArmPosition):
             ),
             "endeffector_reference_frame": np.array(endeffector_reference_frame),
         }
+        return RobotPoseDetail(**pose_detail)
+
+
+class RobotPoseDetail:
+    def __init__(
+        self,
+        segments_xyz,
+        frontend_pose_intrinsic,
+        segments_reference_frames,
+        endeffector_pose_intrinsic,
+        endeffector_pose_extrinsic,
+        endeffector_reference_frame,
+    ) -> None:
+        self.segments_xyz = segments_xyz
+        self.frontend_pose_intrinsic = frontend_pose_intrinsic
+        self.segments_reference_frames = segments_reference_frames
+        self.endeffector_pose_intrinsic = endeffector_pose_intrinsic
+        self.endeffector_pose_extrinsic = endeffector_pose_extrinsic
+        self.endeffector_reference_frame = endeffector_reference_frame
 
 
 class EndeffectorPose(ArmPosition):
@@ -489,17 +508,25 @@ class EndeffectorPose(ArmPosition):
         rotation_target: Rotation = rotation_delta * rotation_current
         rotation_matrix = pinocchio.Jlog3(rotation_target.as_matrix())
         oMdes.rotation = rotation_matrix
+        current_rpy = rotation_current.as_euler("XYZ", degrees=True)
+        logging.debug(
+            f"curren_pose.xyz: {oMdes.translation}, current_pose.rpy: {current_rpy}"
+        )
+        logging.debug(
+            f"target_pose.xyz: {target_pose.xyz}, target_pose.rpy: {target_pose.rpy}"
+        )
+        logging.debug(f"rpy_delta: {np.array(target_pose.rpy) - np.array(current_rpy)}")
 
         dMi = oMdes.actInv(robot.data.oMi[-1])  # find transformation between two frames
         err = pinocchio.log(dMi).vector
-        print(pinocchio.log(dMi).vector)
+        logging.debug(f"Solver error: {err}")
         weights = (1, 1, 1, 0.05, 0.5, 0.5)  # (wx, wy, wz, wroll, wpitch, wyaw)
         err_norm = np.linalg.norm(np.multiply(err, weights))
 
         # todo: a known issue where xyz and rpy has different scale
         # use different eps for xyz and rpy
         if err_norm > eps:
-            logging.warning(f"Solver error norm: {err_norm}")
+            logging.error(f"Solver error norm: {err_norm}")
             ik_solved_positions = None
         else:
             joint_id = len(initial_joint_positions) + 1  # id of the dummy_object_link
@@ -529,6 +556,7 @@ class EndeffectorPose(ArmPosition):
                 gripper_position=gripper_position,
                 expected_pose=target_pose,
             )
+        logging.debug(f"pinocchio ik_solved_positions: {ik_solved_positions}")
 
         logging.debug(
             f"inverse_kinematics_pinocchio_based elapsed time: {(datetime.now() - current_time).total_seconds() * 1000.0}ms"

@@ -21,7 +21,7 @@ class ArmControllerMlTraining(arm_controller.ArmController):
             logging.info(f"Processed {index//1000}k ({int(100.0 * index / size)}%)")
         return arm_position.ActuatorPositions.forward_kinematics_math_based(
             joint_positions=actuator_positions[:-1],
-        )["endeffector_pose_intrinsic"]
+        ).endeffector_pose_intrinsic
 
     def __generate_training_data_forward_kinematics(
         self,
