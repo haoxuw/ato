@@ -460,11 +460,11 @@ class ArmController:
                     ).endeffector_pose_intrinsic
                 )
             else:
-                resulted_pose = (
-                    arm_position.ActuatorPositions.forward_kinematics_pinocchio_based(
-                        robot=self.robot,
-                        joint_positions=actuator_positions[:-1],  # remove gripper
-                    )
+                resulted_pose = arm_position.ActuatorPositions.forward_kinematics_pinocchio_based(
+                    robot=self.robot,
+                    joint_config_radians=arm_position.ActuatorPositions.convert_to_pinocchio_configuration(
+                        joint_positions=actuator_positions[:-1]
+                    ),
                 )
 
             # update perf stats
@@ -1170,10 +1170,10 @@ class ArmController:
             ).endeffector_pose_intrinsic
         else:
             if refresh or self.__current_endeffector_pose is None:
-                self.__current_endeffector_pose = (
-                    arm_position.ActuatorPositions.forward_kinematics_pinocchio_based(
-                        robot=self.robot,
-                        joint_positions=self.__fetch_indexed_joint_positions(),
-                    )
+                self.__current_endeffector_pose = arm_position.ActuatorPositions.forward_kinematics_pinocchio_based(
+                    robot=self.robot,
+                    joint_config_radians=arm_position.ActuatorPositions.convert_to_pinocchio_configuration(
+                        joint_positions=self.__fetch_indexed_joint_positions()
+                    ),
                 )
             return self.__current_endeffector_pose
