@@ -144,7 +144,8 @@ class ArmController:
 
         # joint space control: tracks current position of actuators
         self.__current_actuator_position_obj = None
-        self.__current_actuator_position_forward_kinematics = None
+        self.__current_robot_pose_detail = None
+        self.__current_endeffector_pose = None
 
         self.__positions_momentum = None
 
@@ -404,7 +405,6 @@ class ArmController:
         restrict_max_speed=False,
         use_math_based_impl=False,
     ):
-
         actuator_positions = self.__fetch_indexed_actuator_positions()
 
         ik_solved_positions = (
@@ -457,7 +457,7 @@ class ArmController:
                 resulted_pose = (
                     arm_position.ActuatorPositions.forward_kinematics_math_based(
                         joint_positions=actuator_positions[:-1],  # remove gripper
-                    )["endeffector_pose_intrinsic"]
+                    ).endeffector_pose_intrinsic
                 )
             else:
                 resulted_pose = (
@@ -737,7 +737,6 @@ class ArmController:
             )
             positions = trajectory.get(since_replay_start_delta.total_seconds())
             for index, unique_name in enumerate(self._indexed_servo_names):
-
                 position = positions[index]
                 self.__move_servo(
                     unique_name=unique_name, position=position, show_info=show_info
@@ -770,9 +769,9 @@ class ArmController:
                     #   Reset intended: yes
                     self.__positions_momentum = positions_delta
                     assert resulted_pose is not None
-                    self._intended_pose = arm_position.EndeffectorPose(
-                        pose=resulted_pose
-                    )
+                    # self._intended_pose = arm_position.EndeffectorPose(
+                    #     pose=resulted_pose
+                    # )
 
                     self._move_servos_by_joint_space_delta(
                         joint_positions_delta=self.__positions_momentum
@@ -860,7 +859,8 @@ class ArmController:
     def __do_internal_updates_for_current_actuator_positions(self):
         # calculate forward_kinematics and cache
         self.__fetch_cached_actuator_position_obj(refresh=True)
-        self.__fetch_cached_forward_kinematics_dict(refresh=True)
+        self.__fetch_cached_robot_pose_detail(refresh=True)
+        self.__fetch_cached_endeffector_pose(refresh=True)
 
         recording_on: Tuple = self.__controller_states[ControllerStates.RECORDING_ON]
         if recording_on is not None:
@@ -1063,27 +1063,27 @@ class ArmController:
         plotted_elements = {}
 
         def update(iteration, plotted_elements):
-            kinematics = self.__fetch_cached_forward_kinematics_dict()
+            pose_detail = self.__fetch_cached_robot_pose_detail()
             plotted_segments[0].set_data_3d(
-                kinematics["segments_xyz"][:, 0],
-                kinematics["segments_xyz"][:, 1],
-                kinematics["segments_xyz"][:, 2],
+                pose_detail.segments_xyz[:, 0],
+                pose_detail.segments_xyz[:, 1],
+                pose_detail.segments_xyz[:, 2],
             )
             for plotted_element in plotted_elements.values():
                 plotted_element.remove()
             for index, segments_reference_frame in enumerate(
-                kinematics["segments_reference_frames"][
+                pose_detail.segments_reference_frames[
                     :, :-1
                 ]  # [:, :-1] to remove z axis, which is overlapped with the next segment
             ):
                 plotted_elements[f"segments_reference_frame{index}"] = draw_3_axes(
-                    xyz=kinematics["segments_xyz"][index : index + 1],
+                    xyz=pose_detail.segments_xyz[index : index + 1],
                     uvw=segments_reference_frame,
                     length=self._indexed_segment_lengths[-1] / 2,
                 )
             plotted_elements["endeffector_reference_frame"] = draw_3_axes(
-                xyz=kinematics["segments_xyz"][-1:],
-                uvw=kinematics["endeffector_reference_frame"][:],
+                xyz=pose_detail.segments_xyz[-1:],
+                uvw=pose_detail.endeffector_reference_frame[:],
                 length=self._gripper_length,
             )
             if self._intended_pose is not None:
@@ -1122,11 +1122,8 @@ class ArmController:
         actuator_states = "\n".join(
             [f"{str(servo_obj)}" for servo_obj in self._indexed_servo_objs]
         )
-        math_based_current_pose = self.__fetch_cached_endeffector_pose()
-        # ml_fk_pose = (
-        #     self.__fetch_cached_actuator_position_obj().forward_kinematics_ml_based()
-        # )
-        return f"{time_str} @activated_segment_ids={self.activated_segment_ids} $velocity deg/ms={self.actuator_velocity} {self.frame_rate}hz\n{actuator_states}\nMath-based EE estimate={math_based_current_pose}\n"
+        estimated_pose = self.__fetch_cached_endeffector_pose()
+        return f"{time_str} @activated_segment_ids={self.activated_segment_ids} $velocity deg/ms={self.actuator_velocity} {self.frame_rate}hz\n{actuator_states}\nestimated_pose_in_global_frame={estimated_pose}\n"
 
     def _get_indexed_rotation_ranges(self):
         return np.array(
@@ -1154,19 +1151,29 @@ class ArmController:
             )
         return self.__current_actuator_position_obj
 
-    def __fetch_cached_forward_kinematics_dict(self, refresh=False):
+    def __fetch_cached_robot_pose_detail(self, refresh=False):
         if arm_position.ActuatorPositions.is_ready() and (
-            refresh or self.__current_actuator_position_forward_kinematics is None
+            refresh or self.__current_robot_pose_detail is None
         ):
             joint_positions = self.__fetch_indexed_joint_positions()
-            self.__current_actuator_position_forward_kinematics = (
+            self.__current_robot_pose_detail = (
                 arm_position.ActuatorPositions.forward_kinematics_math_based(
                     joint_positions=joint_positions
                 )
             )
-        return self.__current_actuator_position_forward_kinematics
+        return self.__current_robot_pose_detail
 
-    def __fetch_cached_endeffector_pose(self):
-        return self.__fetch_cached_forward_kinematics_dict()[
-            "endeffector_pose_intrinsic"
-        ]
+    def __fetch_cached_endeffector_pose(self, use_math_based_impl=False, refresh=False):
+        if use_math_based_impl:
+            return self.__fetch_cached_robot_pose_detail(
+                refresh=refresh
+            ).endeffector_pose_intrinsic
+        else:
+            if refresh or self.__current_endeffector_pose is None:
+                self.__current_endeffector_pose = (
+                    arm_position.ActuatorPositions.forward_kinematics_pinocchio_based(
+                        robot=self.robot,
+                        joint_positions=self.__fetch_indexed_joint_positions(),
+                    )
+                )
+            return self.__current_endeffector_pose
