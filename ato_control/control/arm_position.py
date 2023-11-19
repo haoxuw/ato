@@ -59,7 +59,7 @@ class ArmPosition(ABC):
         ), type(sequence)
         assert (
             np.array(sequence).shape == shape
-        ), f"{np.array(sequence).shape} != {shape}"
+        ), f"{np.array(sequence).shape} != {shape}: {sequence}"
         for val in sequence:
             assert isinstance(val, numbers.Number), (val, type(val))
 
@@ -234,26 +234,22 @@ class ActuatorPositions(ArmPosition):
         )
 
     @staticmethod
-    def forward_kinematics_pinocchio_based(
-        robot, joint_positions, return_se3_object=False, log_debug=False
-    ):
-        current_time = datetime.now()
+    def convert_to_pinocchio_configuration(joint_positions):
         # [0] as the dummy_object_link, because:
         # in the urdf, each link is represented by its anchoring position
         # therefore the endeffector's coordinate is located on the last joint
         # to model the position that holds the object, we added a dummy_object_link
         joint_configuration = np.radians(np.array(list(joint_positions) + [0]))
-        joint_configuration = np.matrix(joint_configuration).T
+        return np.matrix(joint_configuration).T
+
+    @staticmethod
+    def forward_kinematics_pinocchio_based(
+        robot, joint_config_radians, return_se3_object=False, log_debug=False
+    ):
         pinocchio.forwardKinematics(
-            robot.model, robot.data, joint_configuration
+            robot.model, robot.data, joint_config_radians
         )  # updated in robot.data.oMi internally
-        if log_debug:
-            # print out the placement of each joint of the kinematic tree
-            for name, oMi in zip(robot.model.names, robot.data.oMi):
-                string = "{:<24} : {: .2f} {: .2f} {: .2f}".format(
-                    name, *oMi.translation.T.flat
-                )
-                logging.debug(string)
+
         # pinocchio's naming convention:
         # oMi is origin to M (i.e. end effector) transformation, (i)nferred from joint_configuration
         # oMdes is origin to M (i.e. end effector) transformation, (des)ired
@@ -267,9 +263,6 @@ class ActuatorPositions(ArmPosition):
             rotation_current = Rotation.from_matrix(oMdes.rotation)
             rpy = rotation_current.as_euler("XYZ", degrees=True)
             solved_pose = np.concatenate([xyz, rpy])
-        logging.debug(
-            f"forward_kinematics_pinocchio_based elapsed time: {(datetime.now() - current_time).total_seconds() * 1000.0}ms"
-        )
         return solved_pose
 
     # consider: refactor to static method
@@ -484,7 +477,7 @@ class EndeffectorPose(ArmPosition):
     @staticmethod
     def inverse_kinematics_pinocchio_based(
         robot: pinocchio.robot_wrapper.RobotWrapper,
-        target_pose,
+        target_pose: ActuatorPositions,
         time_delta_ms: int,
         initial_joint_positions,  # excludes gripper position
         gripper_position=None,
@@ -492,75 +485,88 @@ class EndeffectorPose(ArmPosition):
         damp=1e-2,
         eps=2,
         delta_t=0.1,
+        max_try=100,
     ) -> ActuatorPositions:
-        oMdes = ActuatorPositions.forward_kinematics_pinocchio_based(
-            robot=robot,
-            joint_positions=initial_joint_positions,
-            return_se3_object=True,
+        prior = ActuatorPositions.convert_to_pinocchio_configuration(
+            joint_positions=initial_joint_positions
         )
-
+        ik_solved_positions = None
         current_time = datetime.now()
+        joint_id = len(initial_joint_positions) + 1  # id of the dummy_object_link
 
-        oMdes.translation = target_pose.xyz
-
-        rotation_delta = Rotation.from_euler("XYZ", target_pose.rpy, degrees=True)
-        rotation_current = Rotation.from_matrix(oMdes.rotation)
-        rotation_target: Rotation = rotation_delta * rotation_current
-        rotation_matrix = pinocchio.Jlog3(rotation_target.as_matrix())
-        oMdes.rotation = rotation_matrix
-        current_rpy = rotation_current.as_euler("XYZ", degrees=True)
-        logging.debug(
-            f"curren_pose.xyz: {oMdes.translation}, current_pose.rpy: {current_rpy}"
-        )
-        logging.debug(
-            f"target_pose.xyz: {target_pose.xyz}, target_pose.rpy: {target_pose.rpy}"
-        )
-        logging.debug(f"rpy_delta: {np.array(target_pose.rpy) - np.array(current_rpy)}")
-
-        dMi = oMdes.actInv(robot.data.oMi[-1])  # find transformation between two frames
-        err = pinocchio.log(dMi).vector
-        logging.debug(f"Solver error: {err}")
-        weights = (1, 1, 1, 0.05, 0.5, 0.5)  # (wx, wy, wz, wroll, wpitch, wyaw)
-        err_norm = np.linalg.norm(np.multiply(err, weights))
-
-        # todo: a known issue where xyz and rpy has different scale
-        # use different eps for xyz and rpy
-        if err_norm > eps:
-            logging.error(f"Solver error norm: {err_norm}")
-            ik_solved_positions = None
-        else:
-            joint_id = len(initial_joint_positions) + 1  # id of the dummy_object_link
-            joint_configuration = np.radians(
-                np.array(list(initial_joint_positions) + [0])
+        for index in range(max_try):
+            oMdes = ActuatorPositions.forward_kinematics_pinocchio_based(
+                robot=robot,
+                joint_config_radians=prior,
+                return_se3_object=True,
             )
 
-            jointJacobian = pinocchio.computeJointJacobian(
-                robot.model, robot.data, joint_configuration, joint_id
-            )  # calculate jacobian
-            velocity = -jointJacobian.T.dot(
-                np.linalg.solve(
-                    jointJacobian.dot(jointJacobian.T) + damp * np.eye(6), err
+            oMdes.translation = target_pose.xyz
+
+            rotation_delta = Rotation.from_euler("XYZ", target_pose.rpy, degrees=True)
+            rotation_current = Rotation.from_matrix(oMdes.rotation)
+            rotation_target: Rotation = rotation_delta * rotation_current
+            rotation_matrix = pinocchio.Jlog3(rotation_target.as_matrix())
+            oMdes.rotation = rotation_matrix
+            current_rpy = rotation_current.as_euler("XYZ", degrees=True)
+            logging.debug(
+                f"curren_pose.xyz: {oMdes.translation}, current_pose.rpy: {current_rpy}"
+            )
+            logging.debug(
+                f"target_pose.xyz: {target_pose.xyz}, target_pose.rpy: {target_pose.rpy}"
+            )
+            logging.debug(
+                f"rpy_delta: {np.array(target_pose.rpy) - np.array(current_rpy)}"
+            )
+
+            dMi = oMdes.actInv(
+                robot.data.oMi[-1]
+            )  # find transformation between two frames
+            err = pinocchio.log(dMi).vector
+            weights = (1, 1, 1, 0.05, 0.5, 0.5)  # (wx, wy, wz, wroll, wpitch, wyaw)
+            err_norm = np.linalg.norm(np.multiply(err, weights))
+
+            logging.debug(f"Solver error: {err}")
+            logging.info(f"Solver err_norm: {err_norm}")
+            # todo: a known issue where xyz and rpy has different scale
+            # use different eps for xyz and rpy
+            if err_norm < eps:
+                prior = np.array(prior)
+                prior = prior.reshape(-1)
+                joint_positions = np.degrees(prior)[:-1]  # remove the dummy_object_link
+                ik_solved_positions = ActuatorPositions(
+                    joint_positions=joint_positions,
+                    gripper_position=gripper_position,
+                    expected_pose=target_pose,
                 )
-            )  # calculate velocity in configuration space
+                logging.info(
+                    f"pinocchio ik_solved_positions: {ik_solved_positions}, tried {index} times"
+                )
+                break
+            else:
+                jointJacobian = pinocchio.computeJointJacobian(
+                    robot.model, robot.data, prior, joint_id
+                )  # calculate jacobian
+                velocity = -jointJacobian.T.dot(
+                    np.linalg.solve(
+                        jointJacobian.dot(jointJacobian.T) + damp * np.eye(6), err
+                    )
+                )  # calculate velocity in configuration space
 
-            joint_positions = pinocchio.integrate(
-                robot.model,
-                joint_configuration,
-                velocity * time_delta_ms * delta_t,
-            )
-            joint_positions = np.degrees(joint_positions)[
-                :-1
-            ]  # remove the dummy_object_link
-            ik_solved_positions = ActuatorPositions(
-                joint_positions=joint_positions,
-                gripper_position=gripper_position,
-                expected_pose=target_pose,
-            )
-        logging.debug(f"pinocchio ik_solved_positions: {ik_solved_positions}")
+                prior = pinocchio.integrate(
+                    robot.model,
+                    prior,
+                    velocity * time_delta_ms * delta_t,
+                )
 
+        if ik_solved_positions is None:
+            logging.warning(
+                f"pinocchio inverse kinematics failed to converge after {max_try} tries"
+            )
         logging.debug(
             f"inverse_kinematics_pinocchio_based elapsed time: {(datetime.now() - current_time).total_seconds() * 1000.0}ms"
         )
+        print(ik_solved_positions)
         return ik_solved_positions
 
     def inverse_kinematics_ml_based(self, initial_joint_positions, current_pose):
